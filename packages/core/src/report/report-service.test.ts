@@ -29,6 +29,7 @@ const store = () =>
 			],
 			water: [food({ baseUnit: "ml", nutrients: { kcal: 0 } })],
 			rice: [food({ name: "Rice", nutrients: { kcal: 130, carbs: 28 } })],
+			apple: [food({ name: "Apple", nutrients: { protein: 0.3 } })],
 		},
 		recipes: {
 			"chicken-soup": [
@@ -460,6 +461,21 @@ describe("strict reports", () => {
 				file: dayPath("2026-09-29"),
 				line: 3,
 				message: "Recipes reference each other in a cycle: a@1 -> b@1 -> a@1",
+			},
+		]);
+	});
+
+	test("a day pinning an unusable food version fails at that line", async () => {
+		const error = await rejection(
+			setup({ "2026-09-29": "[lunch]\nrice@1 80\napple@1 150 g\n" })(),
+		);
+
+		expect(error.problems).toEqual([
+			{
+				file: dayPath("2026-09-29"),
+				line: 3,
+				message:
+					"'apple@1' is unusable: the required nutrient 'kcal' is missing",
 			},
 		]);
 	});

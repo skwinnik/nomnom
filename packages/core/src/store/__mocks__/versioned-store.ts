@@ -65,6 +65,14 @@ export function createFakeStore(
 	return {
 		foods,
 		recipes,
+		scanFoods: async () => ({
+			slugs: [...foods.keys()].sort(compareSlugs),
+			invalid: [],
+		}),
+		scanRecipes: async () => ({
+			slugs: [...recipes.keys()].sort(compareSlugs),
+			invalid: [],
+		}),
 		foodSlugs: async () => [...foods.keys()].sort(compareSlugs),
 		recipeSlugs: async () => [...recipes.keys()].sort(compareSlugs),
 		readFood: async (slug) => foods.get(slug),
@@ -90,7 +98,10 @@ export function createFakeStore(
 	};
 }
 
-/** A food version with defaults: per 100 g, no barcodes or units. */
+/**
+ * A food version with defaults: per 100 g, no barcodes or units, and
+ * `kcal: 0` so that it is usable under the default config.
+ */
 export function food(
 	fields: Partial<Omit<NewFoodVersion, "nutrients" | "units">> & {
 		nutrients?: Record<string, number>;
@@ -106,7 +117,7 @@ export function food(
 		barcodes: fields.barcodes ?? [],
 		baseUnit: fields.baseUnit ?? "g",
 		per: fields.per ?? 100,
-		nutrients: new Map(Object.entries(fields.nutrients ?? {})),
+		nutrients: new Map(Object.entries(fields.nutrients ?? { kcal: 0 })),
 		units: new Map(Object.entries(fields.units ?? {})),
 		archived: fields.archived ?? false,
 	};

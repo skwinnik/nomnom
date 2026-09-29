@@ -1,4 +1,5 @@
 import { createCatalog } from "./catalog/catalog";
+import { type CheckService, createCheckService } from "./check/check-service";
 import type { Clock } from "./clock/clock";
 import {
 	type ConfigService,
@@ -42,6 +43,7 @@ export interface Services {
 	search: SearchService;
 	dayLog: DayLogService;
 	report: ReportService;
+	check: CheckService;
 }
 
 /**
@@ -67,5 +69,6 @@ export function createServices(deps: ServiceDependencies): Services {
 		catalog,
 		nutrition,
 	});
-	return { config, foods, recipes, search, dayLog, report };
+	const check = createCheckService({ fs, paths, config, store });
+	return { config, foods, recipes, search, dayLog, report, check };
 }

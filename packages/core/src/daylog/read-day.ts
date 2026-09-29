@@ -3,7 +3,7 @@ import type { Config } from "../config/config";
 import type { DataPaths } from "../data-dir/paths";
 import type { FileSystem } from "../fs/file-system";
 import { type DayLine, parseDay } from "./parse";
-import { type DayCheck, validateDay } from "./validate";
+import { type DayCheck, type ValidationContext, validateDay } from "./validate";
 
 export interface DayFile {
 	/** The day file, which may not exist. */
@@ -17,6 +17,7 @@ export async function readDay(
 	deps: { fs: FileSystem; paths: DataPaths; catalog: Catalog },
 	config: Config,
 	date: string,
+	options: Pick<ValidationContext, "omitTargetProblems"> = {},
 ): Promise<DayFile> {
 	const path = deps.paths.day(date);
 	const lines = parseDay((await deps.fs.readText(path)) ?? "");
@@ -24,6 +25,7 @@ export async function readDay(
 		config,
 		catalog: deps.catalog,
 		file: path,
+		...options,
 	});
 	return { path, lines, check };
 }

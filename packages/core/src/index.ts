@@ -1,4 +1,5 @@
 export type { Catalog, CatalogItem, ItemSummary } from "./catalog/catalog";
+export type { CheckResult, CheckService } from "./check/check-service";
 export type { Clock } from "./clock/clock";
 export { createSystemClock } from "./clock/system-clock";
 export type { Config, Nutrient } from "./config/config";

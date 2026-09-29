@@ -1,5 +1,11 @@
 import type { Catalog } from "../catalog/catalog";
-import { type ItemVersion, measureOf, refName } from "../catalog/units";
+import { resolveReference } from "../catalog/reference";
+import {
+	type ItemVersion,
+	measureOf,
+	refName,
+	unitFactor,
+} from "../catalog/units";
 import type { ConfigService } from "../config/config-service";
 import { NomnomError } from "../errors";
 import type { Ingredient } from "../store/records";
@@ -12,18 +18,6 @@ export interface Nutrition {
 	amountOf(item: ItemVersion, amount: number, unit: string): Promise<Nutrients>;
 	/** The sum of the ingredients' contributions, as for a recipe that is not saved yet. */
 	sumOf(ingredients: readonly Ingredient[]): Promise<Nutrients>;
-}
-
-/** The size of `unit` in the item's measure; throws when the version does not allow it. */
-export function unitFactor(item: ItemVersion, unit: string): number {
-	const { units } = measureOf(item);
-	const factor = units.get(unit);
-	if (factor === undefined) {
-		throw new NomnomError(
-			`'${unit}' is not a unit of ${refName(item)}; it allows ${[...units.keys()].map((name) => `'${name}'`).join(", ")}`,
-		);
-	}
-	return factor;
 }
 
 /**
@@ -92,13 +86,11 @@ export function createNutrition(deps: {
 		for (const ingredient of ingredients) {
 			let item: ItemVersion;
 			try {
-				item = await catalog.resolve(ingredient);
-				if (item.kind !== ingredient.kind) {
-					throw new NomnomError(
-						`'${ingredient.slug}' is a ${item.kind}, not a ${ingredient.kind}`,
-					);
-				}
-				unitFactor(item, ingredient.unit);
+				({ item } = await resolveReference(
+					{ catalog, config: await config.load() },
+					ingredient,
+					{ unit: ingredient.unit, kind: ingredient.kind },
+				));
 			} catch (error) {
 				if (error instanceof NomnomError && within) {
 					throw new NomnomError(

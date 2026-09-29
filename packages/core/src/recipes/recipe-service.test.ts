@@ -31,6 +31,7 @@ const foods: Record<string, FoodVersion[]> = {
 	rice: [food({ nutrients: { kcal: 360 } })],
 	pear: [food(), food({ version: 2, archived: true })],
 	pancakes: [food()],
+	oats: [food({ nutrients: { kcal: 389, protien: 13 } })],
 };
 const recipes: Record<string, RecipeVersion[]> = {
 	"pancake-batter": [
@@ -285,6 +286,11 @@ describe("recipe add", () => {
 		],
 		["an archived item", { ingredients: ["pear@1=100"] }, "'pear' is archived"],
 		[
+			"an unusable food version",
+			{ ingredients: ["oats@1=100"] },
+			"'oats@1' is unusable: 'protien' is not a nutrient in config.yaml",
+		],
+		[
 			"a slug used by a food",
 			{ name: "Pancakes" },
 			"'pancakes' already exists: it is already used by a food",
@@ -523,6 +529,31 @@ describe("recipe show", () => {
 
 		expect((await rejection(service.show("chicken-soup@7"))).message).toBe(
 			"'chicken-soup@7' does not exist: recipe 'chicken-soup' has versions 1 to 2",
+		);
+	});
+
+	test("fails when a stored ingredient became unusable, naming the version, the ingredient and the nutrient", async () => {
+		const { service } = setup({
+			foods: { carrot: [food({ nutrients: { protein: 1 } })] },
+			recipes: {
+				soup: [
+					recipe({
+						ingredients: [
+							{
+								kind: "food",
+								slug: "carrot",
+								version: 1,
+								amount: 100,
+								unit: "g",
+							},
+						],
+					}),
+				],
+			},
+		});
+
+		expect((await rejection(service.show("soup"))).message).toBe(
+			"In recipe soup@1: 'carrot@1' is unusable: the required nutrient 'kcal' is missing",
 		);
 	});
 

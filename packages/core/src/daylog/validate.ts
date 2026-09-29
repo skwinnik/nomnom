@@ -1,8 +1,7 @@
 import type { Catalog } from "../catalog/catalog";
-import { measureOf } from "../catalog/units";
+import { resolveReference, TargetError } from "../catalog/reference";
 import type { Config } from "../config/config";
 import { NomnomError, type Problem } from "../errors";
-import { unitFactor } from "../nutrition/nutrition";
 import { type DayLine, isEntry, type LineContent } from "./parse";
 
 export interface DayCheck {
@@ -19,6 +18,12 @@ export interface ValidationContext {
 	catalog: Catalog;
 	/** The day file, for locating problems. */
 	file: string;
+	/**
+	 * Leave out problems of the referenced items (`TargetError`), such as an
+	 * invalid food file or an unusable food version, for a caller that reports
+	 * them at the items themselves.
+	 */
+	omitTargetProblems?: boolean;
 }
 
 /** Checks a parsed day against the config and the catalog, collecting every problem. */
@@ -82,11 +87,11 @@ export async function checkEntry(
 ): Promise<Problem[]> {
 	if (content.kind === "inline") return checkInline(content, context.config);
 	try {
-		const item = await context.catalog.resolve(content);
-		unitFactor(item, content.unit ?? measureOf(item).defaultUnit);
+		await resolveReference(context, content, { unit: content.unit });
 		return [];
 	} catch (error) {
 		if (!(error instanceof NomnomError)) throw error;
+		if (error instanceof TargetError && context.omitTargetProblems) return [];
 		return [{ file: "", message: error.message }, ...error.problems];
 	}
 }

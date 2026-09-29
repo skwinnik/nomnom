@@ -138,6 +138,16 @@ describe("search", () => {
 		);
 	});
 
+	test("finds a food whose latest version is unusable", async () => {
+		const search = setup({
+			foods: { apple: [food({ name: "Apple", nutrients: { protien: 1 } })] },
+		});
+
+		expect((await search.search("apple")).map((item) => item.slug)).toEqual([
+			"apple",
+		]);
+	});
+
 	test("a slug that is both a food and a recipe fails the search", async () => {
 		const search = setup({
 			foods: { pancakes: [food({ name: "Pancakes" })] },

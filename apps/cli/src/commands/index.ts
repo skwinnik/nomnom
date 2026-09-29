@@ -1,5 +1,6 @@
 import type { Services } from "@nomnom/core";
 import type { Command } from "../runner";
+import { check } from "./check";
 import { foodAdd } from "./food-add";
 import { foodArchive } from "./food-archive";
 import { foodList } from "./food-list";
@@ -18,6 +19,7 @@ import { search } from "./search";
 
 /** Every command the CLI offers. */
 export const commands: readonly Command<Services>[] = [
+	check,
 	foodAdd,
 	foodArchive,
 	foodList,

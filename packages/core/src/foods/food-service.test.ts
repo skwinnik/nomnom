@@ -370,6 +370,58 @@ describe("food add barcodes", () => {
 	});
 });
 
+describe("unusable food versions", () => {
+	// The latest version lacks the required kcal and stores an unknown id.
+	const unusable = () =>
+		setup({
+			"/data/foods/apple.yaml": foodFile(
+				food({ name: "Apple", nutrients: { kcal: 52 } }),
+				food({
+					name: "Apple",
+					version: 2,
+					barcodes: ["4601234567890"],
+					nutrients: { protien: 0.3 },
+				}),
+			),
+		});
+
+	test("food show shows them", async () => {
+		const { foods } = unusable();
+
+		const shown = await foods.show({ ref: "apple" });
+
+		expect(shown.food.version).toBe(2);
+		expect(shown.nutrients[0]).toEqual({
+			id: "kcal",
+			name: "Energy",
+			unit: "kcal",
+			value: undefined,
+		});
+	});
+
+	test("food show finds them by barcode", async () => {
+		const { foods } = unusable();
+
+		expect((await foods.show({ barcode: "4601234567890" })).slug).toBe("apple");
+	});
+
+	test("food list lists them", async () => {
+		const { foods } = unusable();
+
+		expect(await foods.list()).toEqual([
+			{ kind: "food", slug: "apple", version: 2, name: "Apple" },
+		]);
+	});
+
+	test("food add still adds another food, checking barcodes", async () => {
+		const { fs, add } = unusable();
+
+		await add({ barcodes: ["4601234567891"] });
+
+		expect(fs.files.has("/data/foods/rice-4601234567891.yaml")).toBe(true);
+	});
+});
+
 describe("food list", () => {
 	test("lists non-archived foods by their latest version, in slug order", async () => {
 		const { foods } = setup({

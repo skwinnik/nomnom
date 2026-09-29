@@ -9,15 +9,12 @@ import {
 	renameIncomplete,
 	summarise,
 } from "../catalog/catalog";
+import { resolveReference } from "../catalog/reference";
 import { measureOf } from "../catalog/units";
-import type { Nutrient } from "../config/config";
+import type { Config, Nutrient } from "../config/config";
 import type { ConfigService } from "../config/config-service";
 import { NomnomError } from "../errors";
-import {
-	type Nutrients,
-	type Nutrition,
-	unitFactor,
-} from "../nutrition/nutrition";
+import type { Nutrients, Nutrition } from "../nutrition/nutrition";
 import { parseNumber } from "../shared/numbers";
 import { settleInOrder } from "../shared/promises";
 import { parseAmountRef, parseItemRef } from "../shared/references";
@@ -143,16 +140,22 @@ export function createRecipeService(deps: {
 }): RecipeService {
 	const { config, catalog, nutrition, store } = deps;
 
-	const pin = async (text: string, self?: string): Promise<Ingredient> => {
+	const pin = async (
+		text: string,
+		loaded: Config,
+		self?: string,
+	): Promise<Ingredient> => {
 		const ref = parseAmountRef(text);
 		if (ref.slug === self) {
 			throw new NomnomError(
 				`A recipe can't contain itself: '${text}' references '${self}'`,
 			);
 		}
-		const item = await catalog.resolve(ref, { newReference: true });
-		const unit = ref.unit ?? measureOf(item).defaultUnit;
-		unitFactor(item, unit);
+		const { item, unit } = await resolveReference(
+			{ catalog, config: loaded },
+			ref,
+			{ unit: ref.unit, newReference: true },
+		);
 		return {
 			kind: item.kind,
 			slug: item.slug,
@@ -175,7 +178,8 @@ export function createRecipeService(deps: {
 		recipe: NewRecipeVersion;
 		nutrients: RecipeNutrients;
 	}> => {
-		const { nutrients: nutrientCatalog } = await config.load();
+		const loaded = await config.load();
+		const { nutrients: nutrientCatalog } = loaded;
 		const name = input.name.trim();
 		if (name === "") throw new NomnomError("The name must not be empty");
 		if (input.ingredients.length === 0) {
@@ -201,7 +205,7 @@ export function createRecipeService(deps: {
 
 		const ingredients: Ingredient[] = [];
 		for (const text of input.ingredients) {
-			ingredients.push(await pin(text, self));
+			ingredients.push(await pin(text, loaded, self));
 		}
 
 		const slug = slugify(name);

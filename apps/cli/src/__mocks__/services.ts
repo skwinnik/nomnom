@@ -1,4 +1,6 @@
 import type {
+	CheckResult,
+	CheckService,
 	DayLogService,
 	FoodAdded,
 	FoodAddInput,
@@ -216,6 +218,28 @@ export function createReportServiceMock(
 			if (outcome.error) throw outcome.error;
 			if (!outcome.result) throw new Error("no result configured");
 			return outcome.result;
+		},
+	};
+}
+
+/** A check service that returns `result`, or throws `error`, and counts its calls. */
+export function createCheckServiceMock(
+	outcome: { result?: Partial<CheckResult>; error?: NomnomError } = {},
+): CheckService & { readonly calls: number } {
+	let calls = 0;
+	return {
+		get calls() {
+			return calls;
+		},
+		async check() {
+			calls++;
+			if (outcome.error) throw outcome.error;
+			return {
+				errors: [],
+				warnings: [],
+				checked: { foods: 0, recipes: 0, days: 0 },
+				...outcome.result,
+			};
 		},
 	};
 }

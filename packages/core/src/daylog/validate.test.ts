@@ -160,12 +160,53 @@ describe("validateDay", () => {
 		expect(result.errors.map((problem) => problem.line)).toEqual([3, 7, 7]);
 	});
 
+	describe("an unusable food version", () => {
+		const validate = (omitTargetProblems?: boolean) =>
+			validateDay(parseDay("[lunch]\napple@1 150 g\napple@2 1 cup\n"), {
+				config: defaultConfig,
+				catalog: createCatalog({
+					store: createFakeStore({
+						foods: {
+							apple: [
+								food({ nutrients: { protein: 0.3 } }),
+								food({ version: 2 }),
+							],
+						},
+					}),
+				}),
+				file,
+				omitTargetProblems,
+			});
+
+		test("is reported at the line, naming the version and the nutrient", async () => {
+			const result = await validate();
+
+			expect(result.errors).toEqual([
+				{
+					file,
+					line: 2,
+					message:
+						"'apple@1' is unusable: the required nutrient 'kcal' is missing",
+				},
+				{ file, line: 3, message: expect.stringContaining("'cup'") },
+			]);
+		});
+
+		test("is left out with omitTargetProblems, unlike problems of the reference", async () => {
+			const result = await validate(true);
+
+			expect(result.errors).toEqual([
+				{ file, line: 3, message: expect.stringContaining("'cup'") },
+			]);
+		});
+	});
+
 	test("reports a broken food file with its own location", async () => {
 		const store = createFakeStore();
 		const catalog = createCatalog({ store });
 		const broken = {
 			...catalog,
-			resolve: async () => {
+			find: async () => {
 				throw new NomnomError("/data/foods/apple.yaml is invalid", [
 					{
 						file: "/data/foods/apple.yaml",

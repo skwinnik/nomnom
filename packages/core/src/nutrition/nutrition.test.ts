@@ -102,8 +102,8 @@ describe("foods", () => {
 		expect(values.get("protein")).toBe(0);
 	});
 
-	test("calculates only catalog nutrients and ignores retired ones", async () => {
-		const { nutrition, catalog } = setup(
+	test("rejects an ingredient that stores a nutrient removed from the catalog", async () => {
+		const { nutrition } = setup(
 			{ foods: { old: [food({ nutrients: { kcal: 10, retired: 99 } })] } },
 			{
 				nutrients: [
@@ -113,13 +113,13 @@ describe("foods", () => {
 			},
 		);
 
-		const values = await nutrition.amountOf(
-			await catalog.resolve({ slug: "old" }),
-			100,
-			"g",
+		await expect(
+			nutrition.sumOf([
+				{ kind: "food", slug: "old", version: 1, amount: 100, unit: "g" },
+			]),
+		).rejects.toThrow(
+			"'old@1' is unusable: 'retired' is not a nutrient in config.yaml",
 		);
-
-		expect([...values]).toEqual([["kcal", 10]]);
 	});
 
 	test("rejects a unit the version does not allow, listing the allowed ones", async () => {

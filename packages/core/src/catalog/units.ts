@@ -1,3 +1,4 @@
+import { NomnomError } from "../errors";
 import { SERVING } from "../shared/units";
 import type { FoodVersion, RecipeVersion } from "../store/records";
 
@@ -60,6 +61,18 @@ export function measureOf(item: ItemVersion): Measure {
 /** Every unit the item version allows, with its size in the item's measure. */
 export function unitTable(item: ItemVersion): ReadonlyMap<string, number> {
 	return measureOf(item).units;
+}
+
+/** The size of `unit` in the item's measure; throws when the version does not allow it. */
+export function unitFactor(item: ItemVersion, unit: string): number {
+	const { units } = measureOf(item);
+	const factor = units.get(unit);
+	if (factor === undefined) {
+		throw new NomnomError(
+			`'${unit}' is not a unit of ${refName(item)}; it allows ${[...units.keys()].map((name) => `'${name}'`).join(", ")}`,
+		);
+	}
+	return factor;
 }
 
 export function refName(item: {

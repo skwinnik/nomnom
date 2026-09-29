@@ -193,6 +193,56 @@ describe("listing", () => {
 		]);
 	});
 
+	test("reports every invalid name together", async () => {
+		const { store } = setup({
+			"/data/foods/apple.yaml": "",
+			"/data/foods/My Apple.yaml": "",
+			"/data/foods/rice_2.yaml": "",
+		});
+
+		const error = await store.foodSlugs().catch((e) => e);
+
+		expect(error).toBeInstanceOf(NomnomError);
+		expect(error.message).toBe("2 files in /data/foods are invalid");
+		expect(error.problems.map(({ file }: { file: string }) => file)).toEqual([
+			"/data/foods/My Apple.yaml",
+			"/data/foods/rice_2.yaml",
+		]);
+	});
+
+	test("a scan sorts files into slugs and invalid names, ignoring other files and directories", async () => {
+		const { store } = setup({
+			"/data/foods/apple.yaml": "",
+			"/data/foods/apple-pie.yaml": "",
+			"/data/foods/My Apple.yaml": "",
+			"/data/foods/notes.txt": "",
+			"/data/foods/old/rice.yaml": "",
+			"/data/foods/bad name.yaml/x": "",
+			"/data/recipes/soup.yaml": "",
+			"/data/recipes/.yaml": "",
+		});
+
+		expect(await store.scanFoods()).toEqual({
+			slugs: ["apple", "apple-pie"],
+			invalid: [
+				{
+					file: "/data/foods/My Apple.yaml",
+					message:
+						"'My Apple' is not a valid file name: use letters, digits and '-'",
+				},
+			],
+		});
+		expect(await store.scanRecipes()).toEqual({
+			slugs: ["soup"],
+			invalid: [
+				{
+					file: "/data/recipes/.yaml",
+					message: "'' is not a valid file name: use letters, digits and '-'",
+				},
+			],
+		});
+	});
+
 	test("rejects a recipe file name that is not a slug", async () => {
 		const { store } = setup({ "/data/recipes/.yaml": "" });
 

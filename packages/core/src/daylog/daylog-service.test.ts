@@ -24,6 +24,10 @@ function setup(files: Record<string, string> = {}) {
 				food({ version: 2, units: { "medium sized apple": 180 } }),
 			],
 			pear: [food(), food({ version: 2, archived: true })],
+			rice: [
+				food({ nutrients: { kcal: 360 } }),
+				food({ version: 2, nutrients: { kcal: 360, protien: 7 } }),
+			],
 		},
 		recipes: {
 			batter: [recipe({ servings: 2, ingredients: [] })],
@@ -127,6 +131,11 @@ describe("log a reference", () => {
 			"a unit that is not allowed",
 			{ ref: "apple", amount: "1", unit: "cup" },
 			"'cup' is not a unit of apple@2",
+		],
+		[
+			"an unusable food version",
+			{ ref: "rice@2", amount: "80" },
+			"'rice@2' is unusable: 'protien' is not a nutrient in config.yaml",
 		],
 		[
 			"a zero amount",

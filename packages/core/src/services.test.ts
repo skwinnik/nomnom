@@ -33,6 +33,7 @@ test("createServices wires every service", () => {
 	});
 
 	expect(Object.keys(services).sort()).toEqual([
+		"check",
 		"config",
 		"dayLog",
 		"foods",
@@ -56,4 +57,23 @@ test("the report service reads the data directory", async () => {
 
 	expect(report.from).toBe("2026-09-28");
 	expect(report.totals.get("kcal")).toBe(300);
+});
+
+test("the check service reads the data directory", async () => {
+	const services = createServices({
+		fs: createMemoryFileSystem({
+			"/data/logs/2026/2026-09-28.nom": "[lunch]\nrice@1 80\n",
+			"/data/logs/2026/2026-9-29.nom": "",
+		}),
+		clock: createFixedClock(new Date("2026-09-28")),
+		dataDir: "/data",
+	});
+
+	const result = await services.check.check();
+
+	expect(result.errors.map(({ file, line }) => `${file}:${line}`)).toEqual([
+		"/data/logs/2026/2026-09-28.nom:2",
+		"/data/logs/2026/2026-9-29.nom:undefined",
+	]);
+	expect(result.checked).toEqual({ foods: 0, recipes: 0, days: 1 });
 });

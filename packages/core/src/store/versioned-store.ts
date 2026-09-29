@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import type { Clock } from "../clock/clock";
 import type { DataPaths } from "../data-dir/paths";
-import { NomnomError } from "../errors";
+import { NomnomError, type Problem } from "../errors";
 import { FileExistsError, type FileSystem } from "../fs/file-system";
 import { compareSlugs, isSlug } from "../shared/slug";
 import { localTimestamp } from "../shared/time";
@@ -24,14 +24,29 @@ export interface Written<T> {
 export type AppendedFood = NewFoodVersion & { readonly archived?: boolean };
 export type AppendedRecipe = NewRecipeVersion & { readonly archived?: boolean };
 
+/** The `*.yaml` files of a directory, sorted into slugs and invalid names. */
+export interface Scan {
+	/** The slug of every file whose name is a slug, in code point order. */
+	slugs: string[];
+	/** One problem per file whose name is not a slug, in name order. */
+	invalid: Problem[];
+}
+
 /** Reads, creates and extends the versioned YAML files of foods and recipes. */
 export interface VersionedStore {
 	/**
-	 * The slug of every `*.yaml` file in `foods/`, in code point order. Other
-	 * files and directories are ignored; a file name that is not a slug throws.
+	 * Every `*.yaml` file in `foods/`, by slug or as an invalid name. Other
+	 * files and directories are ignored.
+	 */
+	scanFoods(): Promise<Scan>;
+	/** Every `*.yaml` file in `recipes/`, as for `scanFoods`. */
+	scanRecipes(): Promise<Scan>;
+	/**
+	 * The slugs of `scanFoods`. Throws one `NomnomError` carrying every invalid
+	 * file name.
 	 */
 	foodSlugs(): Promise<string[]>;
-	/** The slug of every `*.yaml` file in `recipes/`, as for `foodSlugs`. */
+	/** The slugs of `scanRecipes`, as for `foodSlugs`. */
 	recipeSlugs(): Promise<string[]>;
 	/** Every version of a food, or `undefined` when it has no file. */
 	readFood(slug: string): Promise<FoodVersion[] | undefined>;
@@ -72,24 +87,37 @@ export function createVersionedStore(deps: {
 		return text === undefined ? undefined : parse(text, path);
 	};
 
-	const slugs = async (dir: string): Promise<string[]> => {
-		const result: string[] = [];
+	const scan = async (dir: string): Promise<Scan> => {
+		const slugs: string[] = [];
+		const invalid: Problem[] = [];
 		for (const entry of await fs.list(dir)) {
 			if (entry.kind !== "file" || !entry.name.endsWith(".yaml")) continue;
 			const slug = entry.name.slice(0, -".yaml".length);
-			if (!isSlug(slug)) {
-				const file = join(dir, entry.name);
-				throw new NomnomError(`${file} is invalid`, [
-					{
-						file,
-						message: `'${slug}' is not a valid file name: use letters, digits and '-'`,
-					},
-				]);
+			if (isSlug(slug)) {
+				slugs.push(slug);
+			} else {
+				invalid.push({
+					file: join(dir, entry.name),
+					message: `'${slug}' is not a valid file name: use letters, digits and '-'`,
+				});
 			}
-			result.push(slug);
 		}
 		// Sorted again: `a-b.yaml` sorts before `a.yaml`, but `a` before `a-b`.
-		return result.sort(compareSlugs);
+		return { slugs: slugs.sort(compareSlugs), invalid };
+	};
+
+	const slugs = async (dir: string): Promise<string[]> => {
+		const { slugs, invalid } = await scan(dir);
+		const [only] = invalid;
+		if (only) {
+			throw new NomnomError(
+				invalid.length === 1
+					? `${only.file} is invalid`
+					: `${invalid.length} files in ${dir} are invalid`,
+				invalid,
+			);
+		}
+		return slugs;
 	};
 
 	const create = async <T>(
@@ -143,6 +171,8 @@ export function createVersionedStore(deps: {
 	});
 
 	return {
+		scanFoods: () => scan(paths.foods),
+		scanRecipes: () => scan(paths.recipes),
 		foodSlugs: () => slugs(paths.foods),
 		recipeSlugs: () => slugs(paths.recipes),
 		readFood: (slug) => read(paths.food(slug), parseFoodFile),

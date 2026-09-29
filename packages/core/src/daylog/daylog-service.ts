@@ -1,12 +1,11 @@
 import type { Catalog } from "../catalog/catalog";
-import { measureOf } from "../catalog/units";
+import { resolveReference } from "../catalog/reference";
 import type { Clock } from "../clock/clock";
 import type { Config } from "../config/config";
 import type { ConfigService } from "../config/config-service";
 import type { DataPaths } from "../data-dir/paths";
 import { NomnomError, type Problem } from "../errors";
 import type { FileSystem } from "../fs/file-system";
-import { unitFactor } from "../nutrition/nutrition";
 import { parseNumber } from "../shared/numbers";
 import { parseNutrientInput } from "../shared/nutrient-input";
 import { parseItemRef } from "../shared/references";
@@ -59,7 +58,10 @@ export function createDayLogService(deps: {
 }): DayLogService {
 	const { fs, clock, paths, catalog } = deps;
 
-	const referenceLine = async (input: LogInput): Promise<string> => {
+	const referenceLine = async (
+		input: LogInput,
+		config: Config,
+	): Promise<string> => {
 		if (input.ref === undefined || input.amount === undefined) {
 			throw new NomnomError(
 				"Give a food or recipe and an amount, as in 'nomnom log lunch rice 80 g', or an --inline entry",
@@ -70,12 +72,13 @@ export function createDayLogService(deps: {
 		}
 		const ref = parseItemRef(input.ref);
 		const amount = parseNumber(input.amount, "The amount", "positive");
-		const item = await catalog.resolve(ref, { newReference: true });
-		const unit =
-			input.unit === undefined || input.unit.trim() === ""
-				? measureOf(item).defaultUnit
-				: normaliseUnitName(input.unit);
-		unitFactor(item, unit);
+		const { item, unit } = await resolveReference({ catalog, config }, ref, {
+			unit:
+				input.unit === undefined || input.unit.trim() === ""
+					? undefined
+					: normaliseUnitName(input.unit),
+			newReference: true,
+		});
 		return `${item.slug}@${item.record.version} ${amount} ${unit}`;
 	};
 
@@ -121,7 +124,7 @@ export function createDayLogService(deps: {
 
 			const line =
 				input.inline === undefined
-					? await referenceLine(input)
+					? await referenceLine(input, config)
 					: inlineLine(input, config);
 			// The new line must pass the same checks as a hand-written one.
 			const content = parseLine(line);
