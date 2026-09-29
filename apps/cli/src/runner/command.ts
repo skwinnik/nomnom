@@ -1,3 +1,5 @@
+import type { Config } from "@nomnom/core";
+
 /**
  * An option as a command declares it. `type`, `short`, `multiple` and `default`
  * are passed to `util.parseArgs`; the other fields only feed the help.
@@ -24,8 +26,9 @@ export interface PositionalSpec {
 }
 
 /** Runtime data that option sets may depend on. Resolved lazily by the entry point. */
-// biome-ignore lint/complexity/noBannedTypes: members arrive with the features that need them
-export type CommandContext = {};
+export interface CommandContext {
+	config: Config;
+}
 
 /** Output streams. `text` is written as given; include line breaks yourself. */
 export interface Io {

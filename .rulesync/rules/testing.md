@@ -22,7 +22,7 @@ globs: ["**/*.test.ts", "**/__mocks__/**"]
 
 - Core tests mock ports, or other services when a service is tested in isolation.
 - CLI tests mock the core services a command uses, in `apps/cli/src/__mocks__/`, and pass only those. They never import core mocks: core does not export them, and lint forbids reaching into `packages/`.
-- Most CLI tests call `runCli` in-process with mocked services and captured `io` (`createCapturedIo` from `apps/cli/src/__mocks__/io.ts`). A few end-to-end tests spawn `bun apps/cli/src/index.ts` to prove the wiring.
+- Most CLI tests call `runCli` in-process with mocked services and captured `io` (`createCapturedIo` from `apps/cli/src/__mocks__/io.ts`). A few end-to-end tests spawn `bun apps/cli/src/index.ts` to prove the wiring. They use `withSandbox` from `apps/cli/src/e2e/nomnom.ts`, which runs the CLI with `NOMNOM_DIR` set to a fresh temporary directory and removes it afterwards, so they never touch real data.
 
 ## Adapters
 

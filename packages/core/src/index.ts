@@ -1,14 +1,42 @@
+export type { Catalog, CatalogItem } from "./catalog/catalog";
 export type { Clock } from "./clock/clock";
 export { createSystemClock } from "./clock/system-clock";
+export type { Config, Nutrient } from "./config/config";
+export type { ConfigService } from "./config/config-service";
+export type {
+	DayLogService,
+	Logged,
+	LogInput,
+} from "./daylog/daylog-service";
 export { NomnomError, type Problem } from "./errors";
+export type {
+	FoodAdded,
+	FoodAddInput,
+	FoodService,
+} from "./foods/food-service";
 export { createBunFileSystem } from "./fs/bun-file-system";
 export {
 	type DirectoryEntry,
 	FileExistsError,
 	type FileSystem,
 } from "./fs/file-system";
+export type { Nutrients, Nutrition } from "./nutrition/nutrition";
+export type {
+	NutrientAmount,
+	RecipeAdded,
+	RecipeAddInput,
+	RecipeService,
+} from "./recipes/recipe-service";
 export {
 	createServices,
 	type ServiceDependencies,
 	type Services,
 } from "./services";
+export { BUILT_IN_OPTION_NAMES } from "./shared/options";
+export type {
+	FoodVersion,
+	Ingredient,
+	ItemKind,
+	RecipeVersion,
+} from "./store/records";
+export type { VersionedStore } from "./store/versioned-store";

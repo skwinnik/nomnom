@@ -49,7 +49,7 @@ export function createFoodService(deps: { store: VersionedStore; clock: Clock })
 
 - Dependencies are interfaces (ports or other services), so tests can replace each one with a mock.
 - Factories do no I/O. Building the whole graph is cheap, and the CLI does it on every run.
-- `createServices({ fs, clock })` in `services.ts` wires all services together and returns `Services`. It is the only place that knows how services depend on each other. Add every new service there, and export its interface from `src/index.ts`.
+- `createServices({ fs, clock, dataDir })` in `services.ts` wires all services together and returns `Services`. It is the only place that knows how services depend on each other. Add every new service there, and export its interface from `src/index.ts`.
 - No DI container and no classes with constructor injection.
 
 ## Ports and adapters
@@ -75,6 +75,7 @@ Biome overrides in `biome.json` enforce these. `bun run check` fails on a violat
 | `packages/core/src/**/bun-*.ts` (adapters and their tests) | no | no | yes | yes | no |
 | `apps/cli/src/**` except `index.ts` | no | no | no | no | no |
 | `apps/cli/src/index.ts` (and its end-to-end test) | yes | yes | yes | no | no |
+| `apps/cli/src/e2e/**` (end-to-end helper and tests) | no | yes | yes | yes | no |
 | `**/*.test.ts`, `**/__mocks__/**` | as for their area | as for their area | as for their area | as for their area | yes |
 
 Also enforced:

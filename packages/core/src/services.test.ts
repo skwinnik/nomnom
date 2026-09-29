@@ -16,6 +16,10 @@ test("createServices does no I/O", () => {
 	};
 
 	expect(() =>
-		createServices({ fs, clock: createFixedClock(new Date("2026-09-28")) }),
+		createServices({
+			fs,
+			clock: createFixedClock(new Date("2026-09-28")),
+			dataDir: "/data",
+		}),
 	).not.toThrow();
 });

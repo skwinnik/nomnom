@@ -9,6 +9,16 @@ import {
 	runCli,
 } from ".";
 
+const context: CommandContext = {
+	config: {
+		nutrients: [
+			{ id: "kcal", name: "Energy", unit: "kcal", required: true },
+			{ id: "protein", name: "Protein", unit: "g", required: false },
+		],
+		meals: ["breakfast"],
+	},
+};
+
 interface Call {
 	command: string;
 	values: Record<string, unknown>;
@@ -75,9 +85,9 @@ function setup() {
 			summary: "Set goals",
 			options: (ctx) =>
 				Object.fromEntries(
-					(ctx as { nutrients: string[] }).nutrients.map((nutrient) => [
-						nutrient,
-						{ type: "string" as const, description: `Goal for ${nutrient}` },
+					ctx.config.nutrients.map(({ id }) => [
+						id,
+						{ type: "string" as const, description: `Goal for ${id}` },
 					]),
 				),
 			run: record("goal"),
@@ -120,7 +130,7 @@ function setup() {
 			io,
 			resolveContext: () => {
 				contextCalls++;
-				return { nutrients: ["kcal", "protein"] } as CommandContext;
+				return context;
 			},
 		});
 		return { code, out: io.out, err: io.err };
@@ -564,7 +574,7 @@ describe("services per command", () => {
 			commands: [greet],
 			services: { greeter },
 			io,
-			resolveContext: () => ({}),
+			resolveContext: () => context,
 		});
 
 		expect(code).toBe(0);

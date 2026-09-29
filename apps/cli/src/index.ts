@@ -1,4 +1,6 @@
 #!/usr/bin/env bun
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
 	createBunFileSystem,
 	createServices,
@@ -11,6 +13,8 @@ import { runCli } from "./runner";
 const services = createServices({
 	fs: createBunFileSystem(),
 	clock: createSystemClock(),
+	dataDir:
+		process.env.NOMNOM_DIR || join(process.env.HOME || homedir(), ".nomnom"),
 });
 
 process.exitCode = await runCli({
@@ -21,5 +25,5 @@ process.exitCode = await runCli({
 		stdout: (text) => process.stdout.write(text),
 		stderr: (text) => process.stderr.write(text),
 	},
-	resolveContext: () => ({}),
+	resolveContext: async () => ({ config: await services.config.load() }),
 });

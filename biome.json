@@ -330,6 +330,35 @@
 					}
 				}
 			}
+		},
+		{
+			"includes": ["apps/cli/src/e2e/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "error"
+					},
+					"style": {
+						"noRestrictedGlobals": "off",
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"paths": {},
+								"patterns": [
+									{
+										"group": ["**/__mocks__/**"],
+										"message": "End-to-end tests run the real CLI and use no mocks."
+									},
+									{
+										"group": ["**/packages/**"],
+										"message": "Import core through \"@nomnom/core\", never by relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
 		}
 	]
 }
