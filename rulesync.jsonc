@@ -1,0 +1,18 @@
+{
+	"$schema": "https://github.com/dyoshikawa/rulesync/releases/latest/download/config-schema.json",
+	// Claude Code (CLAUDE.md, .claude/rules) and the AGENTS.md standard (AGENTS.md, .agents/memories).
+	// Skills are not managed here: OpenSpec writes its own into .claude/ and .agents/.
+	"targets": {
+		"claudecode": ["rules"],
+		"agentsmd": ["rules"]
+	},
+	"outputRoots": ["."],
+	"delete": true,
+	"verbose": false,
+	"silent": false,
+	"global": false,
+	"simulateCommands": false,
+	"simulateSubagents": false,
+	"simulateSkills": false,
+	"gitignoreTargetsOnly": true
+}

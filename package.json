@@ -1,0 +1,29 @@
+{
+	"name": "nomnom",
+	"module": "index.ts",
+	"type": "module",
+	"private": true,
+	"devDependencies": {
+		"@biomejs/biome": "^2.5.14",
+		"@fission-ai/openspec": "^1.13.2",
+		"@types/bun": "latest",
+		"husky": "^9.1.7",
+		"lint-staged": "^17.6.0",
+		"rulesync": "^24.0.0"
+	},
+	"peerDependencies": {
+		"typescript": "^5"
+	},
+	"scripts": {
+		"prepare": "husky && rulesync generate",
+		"check": "biome check .",
+		"check:fix": "biome check --write .",
+		"format": "biome format --write .",
+		"lint": "biome lint .",
+		"rules:generate": "rulesync generate",
+		"openspec:update": "openspec update"
+	},
+	"lint-staged": {
+		"*": "biome check --write --no-errors-on-unmatched"
+	}
+}
