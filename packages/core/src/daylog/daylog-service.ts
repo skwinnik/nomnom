@@ -13,8 +13,9 @@ import { parseItemRef } from "../shared/references";
 import { isIsoDate, localDate } from "../shared/time";
 import { normaliseUnitName } from "../shared/units";
 import { insertEntry } from "./insert";
-import { isEntry, parseDay, parseLine } from "./parse";
-import { checkEntry, validateDay } from "./validate";
+import { isEntry, parseLine } from "./parse";
+import { readDay } from "./read-day";
+import { checkEntry } from "./validate";
 
 /** One entry as typed on the command line: every value is still text. */
 export interface LogInput {
@@ -134,9 +135,11 @@ export function createDayLogService(deps: {
 				throw new NomnomError(`Can't log '${line}'`, problems);
 			}
 
-			const path = paths.day(date);
-			const lines = parseDay((await fs.readText(path)) ?? "");
-			const check = await validateDay(lines, { config, catalog, file: path });
+			const { path, lines, check } = await readDay(
+				{ fs, paths, catalog },
+				config,
+				date,
+			);
 			if (check.errors.length > 0) {
 				throw new NomnomError(
 					`${path} has errors; fix them before logging to this day`,

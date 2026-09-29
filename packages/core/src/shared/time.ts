@@ -37,3 +37,18 @@ export function isTimestampWithOffset(text: string): boolean {
 		text,
 	);
 }
+
+/**
+ * Every `yyyy-mm-dd` date from `from` to `to`, both included, by calendar
+ * arithmetic in UTC so that the time zone and the current time play no part.
+ * Both must be real dates; empty when `to` is before `from`.
+ */
+export function datesBetween(from: string, to: string): string[] {
+	const dates: string[] = [];
+	const day = new Date(`${from}T00:00:00Z`);
+	for (let date = from; date <= to; date = day.toISOString().slice(0, 10)) {
+		dates.push(date);
+		day.setUTCDate(day.getUTCDate() + 1);
+	}
+	return dates;
+}

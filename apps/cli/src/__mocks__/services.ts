@@ -9,6 +9,9 @@ import type {
 	RecipeAdded,
 	RecipeAddInput,
 	RecipeService,
+	Report,
+	ReportInput,
+	ReportService,
 } from "@nomnom/core";
 
 export interface Recorded<I> {
@@ -82,6 +85,22 @@ export function createDayLogServiceMock(
 				warnings: [],
 				...outcome.result,
 			};
+		},
+	};
+}
+
+/** A report service that records its inputs and returns `result`, or throws `error`. */
+export function createReportServiceMock(
+	outcome: { result?: Report; error?: NomnomError } = {},
+): ReportService & Recorded<ReportInput> {
+	const calls: ReportInput[] = [];
+	return {
+		calls,
+		async report(input) {
+			calls.push(input);
+			if (outcome.error) throw outcome.error;
+			if (!outcome.result) throw new Error("no result configured");
+			return outcome.result;
 		},
 	};
 }

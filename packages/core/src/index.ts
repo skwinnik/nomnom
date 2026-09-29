@@ -27,6 +27,14 @@ export type {
 	RecipeAddInput,
 	RecipeService,
 } from "./recipes/recipe-service";
+export type {
+	Report,
+	ReportDay,
+	ReportEntry,
+	ReportInput,
+	ReportMeal,
+	ReportService,
+} from "./report/report-service";
 export {
 	createServices,
 	type ServiceDependencies,

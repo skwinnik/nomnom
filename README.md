@@ -60,9 +60,14 @@ nomnom recipe add --name 'Chicken Soup' --servings 4 --base-unit g --yield 1000 
 # Log a food or recipe (the rest of the words are the unit), or typed-in totals.
 nomnom log breakfast apple 1 medium sized apple
 nomnom log dinner --inline 'restaurant ramen' --kcal 800 --protein 35 --date 2026-09-29
+
+# Report a day (default: today) by meal, or a range with totals and the average per logged day.
+nomnom report 2026-09-29
+nomnom report 2026-09-23 2026-09-29 --entries
+nomnom report 2026-09-23 2026-09-29 --json
 ```
 
-`food add` and `recipe add` print the path of the new file; `recipe add` also prints its nutrients per serving and, with a yield, per 100 base units. `log` prints the line it added.
+`food add` and `recipe add` print the path of the new file; `recipe add` also prints its nutrients per serving and, with a yield, per 100 base units. `log` prints the line it added. `report` calculates totals from the day files; the average leaves out today, which may not be over. It fails, printing nothing on standard output, when any day in the range has errors, and lists every one with its file and line.
 
 ### Foods and recipes
 

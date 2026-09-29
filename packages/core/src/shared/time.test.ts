@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+	datesBetween,
 	isIsoDate,
 	isTimestampWithOffset,
 	localDate,
@@ -46,4 +47,42 @@ describe("isTimestampWithOffset", () => {
 		"rejects %j",
 		(text) => expect(isTimestampWithOffset(text)).toBe(false),
 	);
+});
+
+describe("datesBetween", () => {
+	test("lists a single day", () => {
+		expect(datesBetween("2026-09-29", "2026-09-29")).toEqual(["2026-09-29"]);
+	});
+
+	test("crosses a month boundary", () => {
+		expect(datesBetween("2026-09-29", "2026-10-02")).toEqual([
+			"2026-09-29",
+			"2026-09-30",
+			"2026-10-01",
+			"2026-10-02",
+		]);
+	});
+
+	test("crosses a year boundary", () => {
+		expect(datesBetween("2026-12-31", "2027-01-01")).toEqual([
+			"2026-12-31",
+			"2027-01-01",
+		]);
+	});
+
+	test("includes 29 February in a leap year", () => {
+		expect(datesBetween("2028-02-28", "2028-03-01")).toEqual([
+			"2028-02-28",
+			"2028-02-29",
+			"2028-03-01",
+		]);
+		expect(datesBetween("2026-02-28", "2026-03-01")).toEqual([
+			"2026-02-28",
+			"2026-03-01",
+		]);
+	});
+
+	test("is empty when the end is before the start", () => {
+		expect(datesBetween("2026-09-29", "2026-09-28")).toEqual([]);
+	});
 });

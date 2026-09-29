@@ -1,6 +1,7 @@
 import type { Services } from "@nomnom/core";
 import { type CommandEnv, defineCommand } from "../runner";
 import { nutrientOptions, nutrientValues } from "./nutrients";
+import { printWarnings } from "./warnings";
 
 export const log = defineCommand({
 	name: ["log"],
@@ -54,10 +55,7 @@ export const log = defineCommand({
 			...(inline === undefined ? {} : { inline }),
 			nutrients: nutrientValues(rest),
 		});
-		for (const warning of logged.warnings) {
-			const at = warning.line === undefined ? "" : `:${warning.line}`;
-			io.stderr(`warning: ${warning.file}${at}: ${warning.message}\n`);
-		}
+		printWarnings(io, logged.warnings);
 		io.stdout(`${logged.line}\n`);
 	},
 });
