@@ -6,7 +6,6 @@ import {
 	isArchived,
 	latestOf,
 	pickVersion,
-	renameIncomplete,
 	summarise,
 } from "../catalog/catalog";
 import type { ConfigService } from "../config/config-service";
@@ -255,9 +254,7 @@ export function createFoodService(deps: {
 
 			await catalog.ensureSlugFree(newSlug);
 			const created = await store.createFood(newSlug, food);
-			const archived = await setArchived(item, true).catch((error) => {
-				throw renameIncomplete("food", created.path, slug, error);
-			});
+			const archived = await setArchived(item, true);
 			return {
 				slug: newSlug,
 				path: created.path,

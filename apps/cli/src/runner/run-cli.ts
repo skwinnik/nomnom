@@ -1,6 +1,17 @@
 import { inspect } from "node:util";
-import { NomnomError } from "@nomnom/core";
-import type { Command, CommandContext, CommandInfo, Io } from "./command";
+import {
+	NomnomError,
+	type StagedFileSystem,
+	type StagedWrite,
+} from "@nomnom/core";
+import {
+	type Command,
+	type CommandContext,
+	type CommandInfo,
+	DRY_RUN,
+	DRY_RUN_OPTION,
+	type Io,
+} from "./command";
 import {
 	PROGRAM,
 	renderCommandHelp,
@@ -9,6 +20,7 @@ import {
 	startsWith,
 } from "./help";
 import { parseCommandArgs } from "./parse";
+import { formatPreview } from "./preview";
 
 export interface RunCliInput<S> {
 	/** The arguments after the program name. */
@@ -18,6 +30,11 @@ export interface RunCliInput<S> {
 	io: Io;
 	/** Called at most once, and only when the selected command's options depend on the context. */
 	resolveContext: () => CommandContext | Promise<CommandContext>;
+	/**
+	 * The writes the services made while the command ran. They are committed
+	 * after the command succeeds, previewed on `--dry-run`, and otherwise dropped.
+	 */
+	writes: Pick<StagedFileSystem, "staged" | "commit">;
 }
 
 /** Runs one command line and returns the exit code. Never exits the process. */
@@ -35,10 +52,13 @@ export async function runCli<S>(input: RunCliInput<S>): Promise<number> {
 	}
 
 	try {
-		const options =
+		const declared =
 			typeof command.options === "function"
 				? command.options(await input.resolveContext())
 				: command.options;
+		const options = command.writes
+			? { ...declared, [DRY_RUN]: DRY_RUN_OPTION }
+			: declared;
 
 		if (hasHelpFlag(rest)) {
 			io.stdout(renderCommandHelp(command, options));
@@ -47,16 +67,47 @@ export async function runCli<S>(input: RunCliInput<S>): Promise<number> {
 
 		const parsed = parseCommandArgs(rest, options, command.positionals);
 		if (!parsed.ok) return usageError(io, parsed.error, command.name);
+		const { [DRY_RUN]: dryRunValue, ...values } = parsed.values;
+		const dryRun = dryRunValue === true;
 
+		// Held until the files are written, so it never reports a file that wasn't.
+		let out = "";
 		await command.run(
-			{ values: parsed.values, positionals: parsed.positionals },
-			{ services: input.services, io },
+			{ values, positionals: parsed.positionals },
+			{
+				services: input.services,
+				io: {
+					stdout: (text) => {
+						out += text;
+					},
+					stderr: io.stderr,
+				},
+				dryRun,
+			},
 		);
+
+		if (dryRun) {
+			io.stdout(formatDryRun(out, input.writes.staged()));
+			return 0;
+		}
+		await input.writes.commit();
+		io.stdout(out);
 		return 0;
 	} catch (error) {
 		reportError(io, error);
 		return 1;
 	}
+}
+
+/** The command's output, the preview of each file, and a closing line, separated by blank lines. */
+function formatDryRun(out: string, writes: readonly StagedWrite[]): string {
+	return [
+		out,
+		...writes.map(formatPreview),
+		"Dry run: no files were changed.\n",
+	]
+		.filter((section) => section !== "")
+		.join("\n");
 }
 
 /** Takes leading non-option tokens while they extend a known group or command name. */

@@ -64,6 +64,10 @@ A call SHALL add all of its entries or none of them. When any entry is invalid, 
 - **WHEN** `nomnom log breakfast --entry 'oats 60 g' --entry 'old-bread 1 slice'` runs and `old-bread` is archived
 - **THEN** the command fails, reports entry 2 as referencing an archived item, and nothing is written
 
+#### Scenario: Unusable food version among several entries
+- **WHEN** `nomnom log breakfast --entry 'oats 60 g' --entry 'apple@1 150 g'` runs, `kcal` is required and `apple@1` has no `kcal`
+- **THEN** the command fails, reports entry 2 naming `apple@1` and `kcal`, and nothing is written
+
 #### Scenario: --entry combined with a single-entry form
 - **WHEN** `nomnom log breakfast apple 1 --entry 'oats 60 g'` or `nomnom log breakfast --inline 'tea' --kcal 2 --entry 'oats 60 g'` runs
 - **THEN** the command fails with an error saying `--entry` can't be combined with a positional entry or `--inline`, and nothing is written

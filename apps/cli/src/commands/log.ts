@@ -40,6 +40,7 @@ export const log = defineCommand({
 			(n) => `${n.name} (${n.unit}) eaten, with --inline`,
 		),
 	}),
+	writes: true,
 	run: async (
 		{ values, positionals },
 		{ services, io }: CommandEnv<Pick<Services, "dayLog">>,

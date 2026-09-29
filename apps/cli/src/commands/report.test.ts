@@ -4,6 +4,7 @@ import { defaultContext } from "../__mocks__/context";
 import { createCapturedIo } from "../__mocks__/io";
 import { day, meal, ramenEntry, report as reportOf } from "../__mocks__/report";
 import { createReportServiceMock } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { report } from "./report";
 import { reportJson } from "./report-json";
@@ -22,6 +23,7 @@ async function run(
 		commands: [report],
 		services: { report: service },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => defaultContext,
 	});
 	return { code, out: io.out, err: io.err, calls: service.calls };

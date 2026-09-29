@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { type FoodShown, NomnomError } from "@nomnom/core";
 import { createCapturedIo } from "../__mocks__/io";
 import { createFoodServiceMock } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { foodShow } from "./food-show";
 
@@ -42,6 +43,7 @@ async function run(args: string[], shown: FoodShown = apple) {
 		commands: [foodShow],
 		services: { foods },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => {
 			throw new Error("food show does not need the context");
 		},
@@ -138,6 +140,7 @@ describe("food show", () => {
 			commands: [foodShow],
 			services: { foods },
 			io,
+			writes: createWritesMock(),
 			resolveContext: () => {
 				throw new Error("unused");
 			},

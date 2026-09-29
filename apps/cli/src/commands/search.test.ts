@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { NomnomError } from "@nomnom/core";
 import { createCapturedIo } from "../__mocks__/io";
 import { createSearchServiceMock } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { search } from "./search";
 
@@ -12,6 +13,7 @@ async function run(args: string[], service = createSearchServiceMock()) {
 		commands: [search],
 		services: { search: service },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => {
 			throw new Error("search does not need the context");
 		},

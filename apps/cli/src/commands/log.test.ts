@@ -3,6 +3,7 @@ import { NomnomError } from "@nomnom/core";
 import { defaultContext } from "../__mocks__/context";
 import { createCapturedIo } from "../__mocks__/io";
 import { createDayLogServiceMock } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { log } from "./log";
 
@@ -13,6 +14,7 @@ async function run(args: string[], dayLog = createDayLogServiceMock()) {
 		commands: [log],
 		services: { dayLog },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => defaultContext,
 	});
 	return { code, out: io.out, err: io.err, calls: dayLog.calls };
@@ -183,5 +185,18 @@ describe("log", () => {
 		expect(result.out).toContain("--kcal <number>");
 		expect(result.out).toContain("--fiber <number>");
 		expect(result.out).not.toContain("(required)");
+	});
+
+	test("a dry run prints the added line as a real run does", async () => {
+		const args = ["lunch", "rice@1", "80"];
+
+		const real = await run(args);
+		const dry = await run([...args, "--dry-run"]);
+
+		expect(dry).toMatchObject({
+			code: 0,
+			out: `${real.out}\nDry run: no files were changed.\n`,
+			calls: real.calls,
+		});
 	});
 });

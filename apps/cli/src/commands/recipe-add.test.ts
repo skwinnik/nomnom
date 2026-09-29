@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { NomnomError, type RecipeAdded } from "@nomnom/core";
 import { createCapturedIo } from "../__mocks__/io";
 import { createRecipeServiceMock } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { recipeAdd } from "./recipe-add";
 
@@ -44,6 +45,7 @@ async function run(
 		commands: [recipeAdd],
 		services: { recipes },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => {
 			throw new Error("recipe add does not need the context");
 		},
@@ -162,5 +164,21 @@ describe("recipe add", () => {
 			out: "",
 			err: `error: ${message}\n`,
 		});
+	});
+
+	test("a dry run prints the path in the conditional and the nutrients", async () => {
+		const args = ["--name", "Chicken Soup", "--ingredient", "x=1"];
+
+		const real = await run(args);
+		const dry = await run([...args, "--dry-run"]);
+
+		expect(dry.code).toBe(0);
+		expect(dry.calls).toEqual(real.calls);
+		expect(dry.out).toBe(
+			`${real.out.replace("Created", "Would create")}\nDry run: no files were changed.\n`,
+		);
+		expect(dry.out).toStartWith(
+			"Would create /data/recipes/chicken-soup.yaml\n\nPer serving:\n",
+		);
 	});
 });

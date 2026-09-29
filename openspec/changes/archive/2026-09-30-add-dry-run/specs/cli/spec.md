@@ -25,7 +25,7 @@ Every command that writes data SHALL accept a `--dry-run` flag, declared in its 
 With `--dry-run`, the command SHALL perform every check and computation of a real run, fail with the same errors a real run would, and SHALL change no file and create no directory. On success it SHALL print to standard output:
 1. The command's usual output, with each verb that reports a write put in the conditional: `Created` becomes `Would create`, `Updated` becomes `Would update`, `Archived` becomes `Would archive`, `Unarchived` becomes `Would unarchive`.
 2. A blank line, then one preview per file the command would write, in the order it would write them, separated by blank lines.
-3. The line `Dry run: no files were changed.`
+3. A blank line, then the line `Dry run: no files were changed.`
 
 A preview SHALL start with the file's path, followed by ` (new file)` when the file does not exist. For a new file, it SHALL then list every line of the file prefixed with `+ `. For an existing file, it SHALL list the lines that would be added, prefixed with `+ `, and the lines that would be removed, prefixed with `- `, with up to two unchanged lines before and after them prefixed with two spaces. An empty line prefixed with `+ ` or with two spaces SHALL be printed without trailing spaces.
 
@@ -33,7 +33,7 @@ The files previewed SHALL be exactly the files a real run would write at that mo
 
 #### Scenario: Dry run of a new file
 - **WHEN** `nomnom food add --name Apple --base-unit g --kcal 52 --dry-run` runs and no food `apple` exists
-- **THEN** standard output is `Would create <data>/foods/apple.yaml`, a blank line, `<data>/foods/apple.yaml (new file)`, each line of the YAML document prefixed with `+ `, and `Dry run: no files were changed.`, and `foods/apple.yaml` does not exist afterwards
+- **THEN** standard output is `Would create <data>/foods/apple.yaml`, a blank line, `<data>/foods/apple.yaml (new file)`, each line of the YAML document prefixed with `+ `, a blank line, and `Dry run: no files were changed.`, and `foods/apple.yaml` does not exist afterwards
 
 #### Scenario: Dry run of a change to an existing file
 - **WHEN** a dry run would insert one line after line 3 of a 6-line file

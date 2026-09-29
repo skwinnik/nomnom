@@ -83,3 +83,41 @@ test("defineCommand fills in empty positionals and options", () => {
 	expect(command.positionals).toEqual([]);
 	expect(command.options).toEqual({});
 });
+
+test("defineCommand marks a command as writing only when it says so", () => {
+	const reads = defineCommand({ name: ["x"], summary: "X", run: () => {} });
+	const writes = defineCommand({
+		name: ["y"],
+		summary: "Y",
+		writes: true,
+		run: () => {},
+	});
+
+	expect(reads.writes).toBe(false);
+	expect(writes.writes).toBe(true);
+});
+
+test("defineCommand refuses a command that declares its own dry-run", () => {
+	const dryRun = { type: "boolean", description: "Dry run" } as const;
+
+	expect(() =>
+		defineCommand({
+			name: ["x"],
+			summary: "X",
+			options: { "dry-run": dryRun },
+			run: () => {},
+		}),
+	).toThrow("'x' declares 'dry-run': declare `writes: true` instead");
+
+	const contextual = defineCommand({
+		name: ["y"],
+		summary: "Y",
+		options: () => ({ "dry-run": dryRun }),
+		run: () => {},
+	});
+	expect(() =>
+		typeof contextual.options === "function"
+			? contextual.options({ config: { nutrients: [], meals: [] } })
+			: undefined,
+	).toThrow("'y' declares 'dry-run'");
+});

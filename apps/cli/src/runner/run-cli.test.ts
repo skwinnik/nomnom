@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { NomnomError } from "@nomnom/core";
+import { NomnomError, type StagedWrite } from "@nomnom/core";
 import { createCapturedIo } from "../__mocks__/io";
+import { createWritesMock } from "../__mocks__/writes";
 import {
 	type Command,
 	type CommandContext,
@@ -128,6 +129,7 @@ function setup() {
 			commands,
 			services: {},
 			io,
+			writes: createWritesMock(),
 			resolveContext: () => {
 				contextCalls++;
 				return context;
@@ -530,6 +532,7 @@ describe("error reporting and exit codes", () => {
 			commands: [command],
 			services: {},
 			io,
+			writes: createWritesMock(),
 			resolveContext: () => {
 				throw new NomnomError("Config is invalid", [
 					{ file: "config.toml", line: 2, message: "unknown key" },
@@ -574,10 +577,196 @@ describe("services per command", () => {
 			commands: [greet],
 			services: { greeter },
 			io,
+			writes: createWritesMock(),
 			resolveContext: () => context,
 		});
 
 		expect(code).toBe(0);
 		expect(io.out).toBe("Hi, Ada!\n");
+	});
+});
+
+describe("writes", () => {
+	const staged: StagedWrite[] = [
+		{ path: "/data/a.txt", before: undefined, after: "apple\n" },
+		{ path: "/data/b.txt", before: "one\n", after: "one\ntwo\n" },
+	];
+
+	function setupWrites(outcome: Parameters<typeof createWritesMock>[0] = {}) {
+		const envs: { values: object; dryRun: boolean }[] = [];
+		const commands: Command<unknown>[] = [
+			defineCommand({
+				name: ["add"],
+				summary: "Add something",
+				writes: true,
+				options: { name: { type: "string", description: "Name" } },
+				run: ({ values }, { io, dryRun }) => {
+					envs.push({ values: { ...values }, dryRun });
+					io.stderr("warning: careful\n");
+					io.stdout(dryRun ? "Would create a\n" : "Created a\n");
+				},
+			}),
+			defineCommand({
+				name: ["goal"],
+				summary: "Set goals",
+				writes: true,
+				options: () => ({ kcal: { type: "string", description: "kcal" } }),
+				run: () => {},
+			}),
+			defineCommand({
+				name: ["list"],
+				summary: "List things",
+				run: (_args, { io, dryRun }) => {
+					envs.push({ values: {}, dryRun });
+					io.stdout("a\n");
+				},
+			}),
+			defineCommand({
+				name: ["fail"],
+				summary: "Fail after output",
+				writes: true,
+				run: (_args, { io }) => {
+					io.stdout("Created a\n");
+					io.stderr("warning: careful\n");
+					throw new NomnomError("It failed");
+				},
+			}),
+		];
+		const writes = createWritesMock({ staged, ...outcome });
+		const run = async (...argv: string[]) => {
+			const io = createCapturedIo();
+			const code = await runCli({
+				argv,
+				commands,
+				services: {},
+				io,
+				writes,
+				resolveContext: () => context,
+			});
+			return { code, out: io.out, err: io.err };
+		};
+		return { run, envs, writes };
+	}
+
+	test("the help of a writing command lists --dry-run, and other help doesn't", async () => {
+		const { run } = setupWrites();
+
+		const add = await run("add", "--help");
+		const goal = await run("goal", "--help");
+		const list = await run("list", "--help");
+
+		for (const help of [add.out, goal.out]) {
+			expect(help).toMatch(
+				/ {4}--dry-run +Check everything and show what would be written, without changing any file\n/,
+			);
+		}
+		expect(list.out).not.toContain("--dry-run");
+	});
+
+	test("--dry-run on a command that doesn't write is a usage error", async () => {
+		const { run, writes } = setupWrites();
+
+		const result = await run("list", "--dry-run");
+
+		expect(result.code).toBe(1);
+		expect(result.err).toContain("unknown option '--dry-run'");
+		expect(writes.commits).toBe(0);
+	});
+
+	test("run receives dryRun and no dry-run value", async () => {
+		const { run, envs } = setupWrites();
+
+		await run("add", "--name", "a", "--dry-run");
+		await run("add", "--name", "a");
+		await run("list");
+
+		expect(envs).toEqual([
+			{ values: { name: "a" }, dryRun: true },
+			{ values: { name: "a" }, dryRun: false },
+			{ values: {}, dryRun: false },
+		]);
+	});
+
+	test("a successful command commits once, then prints its output", async () => {
+		const { run, writes } = setupWrites();
+
+		const result = await run("add");
+
+		expect(result).toEqual({
+			code: 0,
+			out: "Created a\n",
+			err: "warning: careful\n",
+		});
+		expect(writes.commits).toBe(1);
+	});
+
+	test("a successful command that doesn't write commits too", async () => {
+		const { run, writes } = setupWrites();
+
+		expect((await run("list")).code).toBe(0);
+		expect(writes.commits).toBe(1);
+	});
+
+	test("a dry run prints the output, the previews and a closing line without committing", async () => {
+		const { run, writes } = setupWrites();
+
+		const result = await run("add", "--dry-run");
+
+		expect(result.code).toBe(0);
+		expect(result.out).toBe(
+			[
+				"Would create a",
+				"",
+				"/data/a.txt (new file)",
+				"+ apple",
+				"",
+				"/data/b.txt",
+				"  one",
+				"+ two",
+				"",
+				"Dry run: no files were changed.",
+				"",
+			].join("\n"),
+		);
+		expect(writes.commits).toBe(0);
+	});
+
+	test("an error, a usage error and --help don't commit", async () => {
+		const { run, writes } = setupWrites();
+
+		await run("fail");
+		await run("add", "--unknown");
+		await run("add", "--help");
+
+		expect(writes.commits).toBe(0);
+	});
+
+	test("a failing command drops its output but keeps its stderr", async () => {
+		const { run } = setupWrites();
+
+		const result = await run("fail");
+
+		expect(result).toEqual({
+			code: 1,
+			out: "",
+			err: "warning: careful\nerror: It failed\n",
+		});
+	});
+
+	test("a failing commit exits 1 with its error and prints no output", async () => {
+		const { run } = setupWrites({
+			error: new NomnomError(
+				"Wrote /data/a.txt, but could not write /data/b.txt",
+				[{ file: "/data/b.txt", message: "disk full" }],
+			),
+		});
+
+		const result = await run("add");
+
+		expect(result).toEqual({
+			code: 1,
+			out: "",
+			err: "warning: careful\nerror: Wrote /data/a.txt, but could not write /data/b.txt\n/data/b.txt: disk full\n",
+		});
 	});
 });

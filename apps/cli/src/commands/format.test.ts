@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
+	formatArchived,
 	formatChanges,
 	formatColumns,
 	formatItems,
 	formatNutrients,
 	formatStoredNutrients,
 	formatUpdated,
+	writeVerb,
 } from "./format";
 
 describe("formatItems", () => {
@@ -105,21 +107,61 @@ describe("formatNutrients", () => {
 	});
 });
 
+describe("writeVerb", () => {
+	test("keeps the verb for a real run and puts it in the conditional for a dry run", () => {
+		const verbs = ["Created", "Updated", "Archived", "Unarchived"] as const;
+
+		expect(verbs.map((verb) => writeVerb(verb, false))).toEqual([...verbs]);
+		expect(verbs.map((verb) => writeVerb(verb, true))).toEqual([
+			"Would create",
+			"Would update",
+			"Would archive",
+			"Would unarchive",
+		]);
+	});
+});
+
 describe("formatUpdated", () => {
 	test("names the file and the new version", () => {
-		expect(formatUpdated("/data/foods/apple.yaml", 3)).toBe(
+		expect(formatUpdated("/data/foods/apple.yaml", 3, undefined, false)).toBe(
 			"Updated /data/foods/apple.yaml (version 3)\n",
+		);
+		expect(formatUpdated("/data/foods/apple.yaml", 3, undefined, true)).toBe(
+			"Would update /data/foods/apple.yaml (version 3)\n",
 		);
 	});
 
 	test("after a rename, names the created file and the archived one", () => {
+		const archived = { path: "/data/foods/apple.yaml", version: 3 };
+
 		expect(
-			formatUpdated("/data/foods/green-apple.yaml", 1, {
-				path: "/data/foods/apple.yaml",
-				version: 3,
-			}),
+			formatUpdated("/data/foods/green-apple.yaml", 1, archived, false),
 		).toBe(
 			"Created /data/foods/green-apple.yaml\nArchived /data/foods/apple.yaml (version 3)\n",
+		);
+		expect(
+			formatUpdated("/data/foods/green-apple.yaml", 1, archived, true),
+		).toBe(
+			"Would create /data/foods/green-apple.yaml\nWould archive /data/foods/apple.yaml (version 3)\n",
+		);
+	});
+});
+
+describe("formatArchived", () => {
+	test("names the file and the version, archived or unarchived", () => {
+		const path = "/data/foods/apple.yaml";
+
+		expect(formatArchived(path, 3, { archived: true, dryRun: false })).toBe(
+			`Archived ${path} (version 3)\n`,
+		);
+		expect(formatArchived(path, 3, { archived: true, dryRun: true })).toBe(
+			`Would archive ${path} (version 3)\n`,
+		);
+		expect(formatArchived(path, 4, { archived: false, dryRun: false })).toBe(
+			`Unarchived ${path} (version 4)\n`,
+		);
+		expect(formatArchived(path, 4, { archived: false, dryRun: true })).toBe(
+			`Would unarchive ${path} (version 4)\n`,
 		);
 	});
 });

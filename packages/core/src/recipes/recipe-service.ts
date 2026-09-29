@@ -6,7 +6,6 @@ import {
 	isArchived,
 	latestOf,
 	pickVersion,
-	renameIncomplete,
 	summarise,
 } from "../catalog/catalog";
 import { resolveReference } from "../catalog/reference";
@@ -343,9 +342,7 @@ export function createRecipeService(deps: {
 
 			await catalog.ensureSlugFree(prepared.slug);
 			const created = await store.createRecipe(prepared.slug, prepared.recipe);
-			const archived = await setArchived(item, true).catch((error) => {
-				throw renameIncomplete("recipe", created.path, slug, error);
-			});
+			const archived = await setArchived(item, true);
 			return {
 				slug: prepared.slug,
 				path: created.path,

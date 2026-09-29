@@ -63,6 +63,20 @@ export function formatRecipeNutrients(nutrients: RecipeNutrients): string[] {
 	return tables;
 }
 
+export type WriteVerb = "Created" | "Updated" | "Archived" | "Unarchived";
+
+const CONDITIONAL: Record<WriteVerb, string> = {
+	Created: "Would create",
+	Updated: "Would update",
+	Archived: "Would archive",
+	Unarchived: "Would unarchive",
+};
+
+/** A verb that reports a write, in the conditional for a dry run: `Would create`. */
+export function writeVerb(verb: WriteVerb, dryRun: boolean): string {
+	return dryRun ? CONDITIONAL[verb] : verb;
+}
+
 /**
  * The first lines of an update: `Updated <path> (version N)`, or after a
  * rename `Created <path>` and `Archived <old path> (version N)`.
@@ -70,11 +84,22 @@ export function formatRecipeNutrients(nutrients: RecipeNutrients): string[] {
 export function formatUpdated(
 	path: string,
 	version: number,
-	archived?: { path: string; version: number },
+	archived: { path: string; version: number } | undefined,
+	dryRun: boolean,
 ): string {
 	return archived
-		? `Created ${path}\nArchived ${archived.path} (version ${archived.version})\n`
-		: `Updated ${path} (version ${version})\n`;
+		? `${writeVerb("Created", dryRun)} ${path}\n${formatArchived(archived.path, archived.version, { archived: true, dryRun })}`
+		: `${writeVerb("Updated", dryRun)} ${path} (version ${version})\n`;
+}
+
+/** `Archived <path> (version N)`, or `Unarchived` when `archived` is false. */
+export function formatArchived(
+	path: string,
+	version: number,
+	options: { archived: boolean; dryRun: boolean },
+): string {
+	const verb = options.archived ? "Archived" : "Unarchived";
+	return `${writeVerb(verb, options.dryRun)} ${path} (version ${version})\n`;
 }
 
 /**

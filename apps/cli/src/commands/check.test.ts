@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { type CheckResult, NomnomError } from "@nomnom/core";
 import { createCapturedIo } from "../__mocks__/io";
 import { createCheckServiceMock } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { check } from "./check";
 
@@ -16,6 +17,7 @@ async function run(
 		commands: [check],
 		services: { check: service },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => {
 			throw new Error("check does not need the context");
 		},

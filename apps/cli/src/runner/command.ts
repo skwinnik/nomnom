@@ -39,6 +39,8 @@ export interface Io {
 export interface CommandEnv<S> {
 	services: S;
 	io: Io;
+	/** `--dry-run` was given. Always `false` for a command that doesn't write. */
+	dryRun: boolean;
 }
 
 type OptionValue<Spec extends OptionSpec> = Spec extends { multiple: true }
@@ -79,6 +81,8 @@ export interface CommandDefinition<O extends OptionSpecs, S> {
 	positionals?: readonly PositionalSpec[];
 	/** Static options, or a function of the runtime context for options that depend on it. */
 	options?: O | ((ctx: CommandContext) => O);
+	/** The command writes data: the runner adds `--dry-run` to its options. */
+	writes?: boolean;
 	run: (args: ParsedArgs<O>, env: CommandEnv<S>) => void | Promise<void>;
 }
 
@@ -88,6 +92,7 @@ export interface CommandInfo {
 	readonly summary: string;
 	readonly positionals: readonly PositionalSpec[];
 	readonly options: OptionSpecs | ((ctx: CommandContext) => OptionSpecs);
+	readonly writes: boolean;
 }
 
 /**
@@ -102,6 +107,15 @@ export interface Command<S> extends CommandInfo {
 	) => void | Promise<void>;
 }
 
+/** The option the runner adds to every command that writes. */
+export const DRY_RUN = "dry-run";
+
+export const DRY_RUN_OPTION: OptionSpec = {
+	type: "boolean",
+	description:
+		"Check everything and show what would be written, without changing any file",
+};
+
 /**
  * Declares a command. Its definition is the only source of the arguments the
  * command accepts and of its help. Declare the services it uses by annotating
@@ -111,11 +125,24 @@ export function defineCommand<
 	const O extends OptionSpecs = Record<never, never>,
 	S = unknown,
 >(definition: CommandDefinition<O, S>): Command<S> {
+	const options = definition.options ?? {};
+	const checked = (specs: OptionSpecs): OptionSpecs => {
+		if (DRY_RUN in specs) {
+			throw new Error(
+				`'${definition.name.join(" ")}' declares '${DRY_RUN}': declare \`writes: true\` instead`,
+			);
+		}
+		return specs;
+	};
 	return {
 		name: definition.name,
 		summary: definition.summary,
 		positionals: definition.positionals ?? [],
-		options: definition.options ?? {},
+		options:
+			typeof options === "function"
+				? (ctx) => checked(options(ctx))
+				: checked(options),
+		writes: definition.writes ?? false,
 		// The runner parses values from the same specs, so they match `O`.
 		run: (args, env) => definition.run(args as ParsedArgs<O>, env),
 	};
