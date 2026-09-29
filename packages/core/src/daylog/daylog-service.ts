@@ -8,15 +8,18 @@ import { NomnomError, type Problem } from "../errors";
 import type { FileSystem } from "../fs/file-system";
 import { parseNumber } from "../shared/numbers";
 import { parseNutrientInput } from "../shared/nutrient-input";
-import { parseItemRef } from "../shared/references";
+import { type ItemRef, parseItemRef } from "../shared/references";
 import { isIsoDate, localDate } from "../shared/time";
 import { normaliseUnitName } from "../shared/units";
-import { insertEntry } from "./insert";
-import { isEntry, parseLine } from "./parse";
+import { insertEntries } from "./insert";
+import { isEntry, parseEntryText, parseLine } from "./parse";
 import { readDay } from "./read-day";
 import { checkEntry } from "./validate";
 
-/** One entry as typed on the command line: every value is still text. */
+/**
+ * What to log, as typed on the command line: every value is still text. Either
+ * one entry (a reference or an inline entry) or `entries`, not both.
+ */
 export interface LogInput {
 	meal: string;
 	/** `yyyy-mm-dd`; default: today's local date. */
@@ -29,22 +32,25 @@ export interface LogInput {
 	inline?: string;
 	/** Values by nutrient id, for an inline entry. */
 	nutrients?: Readonly<Record<string, string | undefined>>;
+	/** Entries written as day-file lines whose version may be omitted, as typed. */
+	entries?: readonly string[];
 }
 
 export interface Logged {
 	/** The day file written. */
 	path: string;
 	date: string;
-	/** The line added. */
-	line: string;
+	/** The lines added, in order. */
+	lines: string[];
 	/** Problems in the existing file that did not block logging. */
 	warnings: Problem[];
 }
 
 export interface DayLogService {
 	/**
-	 * Adds one entry to a day file, keeping every existing line. Refuses to write
-	 * when the existing file has errors.
+	 * Adds one or more entries to a day file, keeping every existing line. Adds
+	 * all of them or none: refuses to write when any entry is invalid, reporting
+	 * every invalid one, or when the existing file has errors.
 	 */
 	log(input: LogInput): Promise<Logged>;
 }
@@ -57,6 +63,22 @@ export function createDayLogService(deps: {
 	catalog: Catalog;
 }): DayLogService {
 	const { fs, clock, paths, catalog } = deps;
+
+	/**
+	 * Writes a new reference in the standard form, pinning the latest version
+	 * when none is given. The checks are those of `resolveReference`.
+	 */
+	const pinReference = async (
+		entry: { ref: ItemRef; amount: number; unit?: string },
+		config: Config,
+	): Promise<string> => {
+		const { item, unit } = await resolveReference(
+			{ catalog, config },
+			entry.ref,
+			{ unit: entry.unit, newReference: true },
+		);
+		return `${item.slug}@${item.record.version} ${entry.amount} ${unit}`;
+	};
 
 	const referenceLine = async (
 		input: LogInput,
@@ -72,14 +94,12 @@ export function createDayLogService(deps: {
 		}
 		const ref = parseItemRef(input.ref);
 		const amount = parseNumber(input.amount, "The amount", "positive");
-		const { item, unit } = await resolveReference({ catalog, config }, ref, {
-			unit:
-				input.unit === undefined || input.unit.trim() === ""
-					? undefined
-					: normaliseUnitName(input.unit),
-			newReference: true,
-		});
-		return `${item.slug}@${item.record.version} ${amount} ${unit}`;
+		return pinReference(
+			input.unit === undefined || input.unit.trim() === ""
+				? { ref, amount }
+				: { ref, amount, unit: normaliseUnitName(input.unit) },
+			config,
+		);
 	};
 
 	const inlineLine = (input: LogInput, config: Config): string => {
@@ -103,8 +123,108 @@ export function createDayLogService(deps: {
 				"An inline entry needs at least one nutrient value, as in --kcal 800",
 			);
 		}
-		const pairs = [...values].map(([id, value]) => `${id}=${value}`);
-		return `"${description}" ${pairs.join(" ")}`;
+		return formatInline(description, values);
+	};
+
+	/** One entry given as the positional form or --inline. Throws on its first problem. */
+	const singleLine = async (
+		input: LogInput,
+		config: Config,
+	): Promise<string> => {
+		const line =
+			input.inline === undefined
+				? await referenceLine(input, config)
+				: inlineLine(input, config);
+		// The new line must pass the same checks as a hand-written one.
+		const content = parseLine(line);
+		if (!isEntry(content)) {
+			throw new NomnomError(
+				`Can't log '${line}': ${content.kind === "error" ? content.message : "not an entry"}`,
+			);
+		}
+		const problems = await checkEntry(content, { config, catalog });
+		if (problems.length > 0) {
+			throw new NomnomError(`Can't log '${line}'`, problems);
+		}
+		return line;
+	};
+
+	/**
+	 * Builds an --entry value into its line in the standard form and checks the
+	 * line by the rules of a hand-written one. Problems in the entry itself have
+	 * an empty `file`.
+	 */
+	const entryLine = async (
+		text: string,
+		config: Config,
+	): Promise<{ line: string } | { problems: Problem[] }> => {
+		let line: string;
+		try {
+			const entry = parseEntryText(text);
+			if (entry.kind === "reference") {
+				line = await pinReference(entry, config);
+			} else {
+				// Before writing the line, which keeps only known nutrients.
+				const problems = await checkEntry(entry, { config, catalog });
+				if (problems.length > 0) return { problems };
+				const values = new Map(entry.values.map((v) => [v.id, v.value]));
+				line = formatInline(
+					entry.description,
+					config.nutrients.flatMap(({ id }) => {
+						const value = values.get(id);
+						return value === undefined ? [] : [[id, value] as const];
+					}),
+				);
+			}
+		} catch (error) {
+			if (!(error instanceof NomnomError)) throw error;
+			return {
+				problems: [{ file: "", message: error.message }, ...error.problems],
+			};
+		}
+		const content = parseLine(line);
+		if (!isEntry(content)) {
+			const message =
+				content.kind === "error" ? content.message : "not an entry";
+			return { problems: [{ file: "", message }] };
+		}
+		const problems = await checkEntry(content, { config, catalog });
+		return problems.length > 0 ? { problems } : { line };
+	};
+
+	/** Builds every --entry value, or throws with the problems of every invalid one. */
+	const entryLines = async (
+		entries: readonly string[],
+		config: Config,
+	): Promise<string[]> => {
+		const lines: string[] = [];
+		const problems: Problem[] = [];
+		let invalid = 0;
+		for (const [i, raw] of entries.entries()) {
+			const built = await entryLine(raw, config);
+			if ("line" in built) {
+				lines.push(built.line);
+				continue;
+			}
+			invalid++;
+			const label = `entry ${i + 1} '${raw.trim()}'`;
+			for (const problem of built.problems) {
+				problems.push(
+					problem.file === ""
+						? { ...problem, message: `${label}: ${problem.message}` }
+						: problem,
+				);
+			}
+		}
+		if (invalid > 0) {
+			throw new NomnomError(
+				entries.length === 1
+					? "Can't log the entry"
+					: `Can't log ${invalid} of ${entries.length} entries`,
+				problems,
+			);
+		}
+		return lines;
 	};
 
 	return {
@@ -122,21 +242,16 @@ export function createDayLogService(deps: {
 				);
 			}
 
-			const line =
-				input.inline === undefined
-					? await referenceLine(input, config)
-					: inlineLine(input, config);
-			// The new line must pass the same checks as a hand-written one.
-			const content = parseLine(line);
-			if (!isEntry(content)) {
+			const entries = input.entries ?? [];
+			if (entries.length > 0 && hasSingleEntry(input)) {
 				throw new NomnomError(
-					`Can't log '${line}': ${content.kind === "error" ? content.message : "not an entry"}`,
+					"Give --entry values, or one entry as a food or recipe with an amount or with --inline, not both",
 				);
 			}
-			const problems = await checkEntry(content, { config, catalog });
-			if (problems.length > 0) {
-				throw new NomnomError(`Can't log '${line}'`, problems);
-			}
+			const added =
+				entries.length > 0
+					? await entryLines(entries, config)
+					: [await singleLine(input, config)];
 
 			const { path, lines, check } = await readDay(
 				{ fs, paths, catalog },
@@ -152,9 +267,29 @@ export function createDayLogService(deps: {
 
 			await fs.replaceAtomic(
 				path,
-				insertEntry(lines, input.meal, line, config.meals),
+				insertEntries(lines, input.meal, added, config.meals),
 			);
-			return { path, date, line, warnings: check.warnings };
+			return { path, date, lines: added, warnings: check.warnings };
 		},
 	};
+}
+
+/** Whether any part of the positional form or --inline is given. */
+function hasSingleEntry(input: LogInput): boolean {
+	return (
+		input.ref !== undefined ||
+		input.amount !== undefined ||
+		input.unit !== undefined ||
+		input.inline !== undefined ||
+		Object.values(input.nutrients ?? {}).some((v) => v !== undefined)
+	);
+}
+
+/** An inline entry line in the standard form. */
+function formatInline(
+	description: string,
+	values: Iterable<readonly [string, number]>,
+): string {
+	const pairs = [...values].map(([id, value]) => `${id}=${value}`);
+	return `"${description}" ${pairs.join(" ")}`;
 }

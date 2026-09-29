@@ -1,18 +1,19 @@
 import { type DayLine, isEntry } from "./parse";
 
 /**
- * Inserts one entry line for `meal` into the lines of a day file and returns
- * the new text. Existing lines are kept exactly as they were:
+ * Inserts entry lines for `meal`, together and in order, into the lines of a
+ * day file and returns the new text. Existing lines are kept exactly as they
+ * were:
  * - into the meal's last section, right after its last entry or comment
  * - otherwise as a new section before the first section of a later meal
  *   (unknown meals come after all configured ones), or at the end, separated
  *   from its neighbours by blank lines
  * The text always ends with a line break.
  */
-export function insertEntry(
+export function insertEntries(
 	lines: readonly DayLine[],
 	meal: string,
-	entry: string,
+	entries: readonly string[],
 	meals: readonly string[],
 ): string {
 	const raws = lines.map((line) => line.raw);
@@ -29,7 +30,7 @@ export function insertEntry(
 			const { content } = lines[i] as DayLine;
 			if (isEntry(content) || content.kind === "comment") at = i + 1;
 		}
-		raws.splice(at, 0, entry);
+		raws.splice(at, 0, ...entries);
 		return finish(raws);
 	}
 
@@ -37,7 +38,7 @@ export function insertEntry(
 		const index = meals.indexOf(name);
 		return index < 0 ? Number.POSITIVE_INFINITY : index;
 	};
-	const block = [`[${meal}]`, entry];
+	const block = [`[${meal}]`, ...entries];
 	const later = sections.find((section) => rank(section.meal) > rank(meal));
 	if (later) {
 		const before = later.index > 0 && raws[later.index - 1]?.trim() !== "";

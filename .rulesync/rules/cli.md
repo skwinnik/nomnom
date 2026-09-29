@@ -43,7 +43,7 @@ export const foodAdd = defineCommand({
 
 - Write output only through the injected `io.stdout(text)` and `io.stderr(text)`. Include line breaks yourself. Never use `console` or `process`.
 - The runner holds standard output until the command's files are written, and drops it when the command or the commit fails. Standard error, such as warnings, is printed at once.
-- Let errors propagate. The runner prints a `NomnomError` as its message plus one `file:line: message` line per problem, prints the stack trace for anything else, and returns the exit code (0 success, 1 failure or usage error).
+- Let errors propagate. The runner prints a `NomnomError` as its message plus one line per problem (`file:line: message`, or the message alone when the problem has no file), prints the stack trace for anything else, and returns the exit code (0 success, 1 failure or usage error).
 - The runner never exits the process. It returns the exit code.
 
 ## The entry point

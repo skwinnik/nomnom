@@ -14,6 +14,7 @@ export const BUILT_IN_OPTION_NAMES: readonly string[] = [
 	"yield",
 	"inline",
 	"date",
+	"entry",
 	"entries",
 	"json",
 ];

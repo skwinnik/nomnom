@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { insertEntry } from "./insert";
+import { insertEntries } from "./insert";
 import { parseDay } from "./parse";
 
 const meals = ["breakfast", "lunch", "dinner", "snack"];
 
 function insert(text: string, meal: string, entry = "apple@2 1 g"): string {
-	return insertEntry(parseDay(text), meal, entry, meals);
+	return insertEntries(parseDay(text), meal, [entry], meals);
+}
+
+/** Inserts `entries` one call at a time. */
+function insertEach(text: string, meal: string, entries: string[]): string {
+	return entries.reduce((result, entry) => insert(result, meal, entry), text);
 }
 
 /** Every original line appears in the result unchanged and in order, and only `added` lines are new. */
@@ -19,7 +24,7 @@ function expectPreserved(original: string, result: string, added: string[]) {
 	expect(remaining).toEqual(before);
 }
 
-describe("insertEntry", () => {
+describe("insertEntries", () => {
 	test("appends to an existing section after its last entry, keeping every other line", () => {
 		const original = [
 			"# my day",
@@ -135,4 +140,78 @@ describe("insertEntry", () => {
 		expectPreserved(original, result, ["apple@2 1 g"]);
 		expect(result.split("\n")[4]).toBe("apple@2 1 g");
 	});
+
+	test("inserts several entries after a trailing comment of the section, in order", () => {
+		const original =
+			"[breakfast]\neggs@2 2\n# before the run\n\n[lunch]\nrice@1 80\n";
+
+		const result = insertEntries(
+			parseDay(original),
+			"breakfast",
+			["oats@2 60 g", "milk@1 200 ml"],
+			meals,
+		);
+
+		expect(result).toBe(
+			"[breakfast]\neggs@2 2\n# before the run\noats@2 60 g\nmilk@1 200 ml\n\n[lunch]\nrice@1 80\n",
+		);
+		expectPreserved(original, result, ["oats@2 60 g", "milk@1 200 ml"]);
+	});
+
+	test("inserts a new section with several entries between earlier and later meals", () => {
+		const original = "[breakfast]\na@1 1\n\n[dinner]\nb@1 1\n";
+
+		const result = insertEntries(
+			parseDay(original),
+			"lunch",
+			["x@1 1", "y@1 2", "z@1 3"],
+			meals,
+		);
+
+		expect(result).toBe(
+			"[breakfast]\na@1 1\n\n[lunch]\nx@1 1\ny@1 2\nz@1 3\n\n[dinner]\nb@1 1\n",
+		);
+	});
+
+	test("creates a new file with several entries", () => {
+		expect(insertEntries([], "snack", ["x@1 1", '"y" kcal=2'], meals)).toBe(
+			'[snack]\nx@1 1\n"y" kcal=2\n',
+		);
+	});
+
+	test("appends a new section with several entries at the end of a file", () => {
+		expect(
+			insertEntries(
+				parseDay("[breakfast]\na@1 1\n"),
+				"dinner",
+				["x@1 1", "y@1 2"],
+				meals,
+			),
+		).toBe("[breakfast]\na@1 1\n\n[dinner]\nx@1 1\ny@1 2\n");
+	});
+
+	test.each([
+		[
+			"an existing section",
+			"[breakfast]\na@1 1\n# note\n\n[lunch]\nb@1 1\n",
+			"breakfast",
+		],
+		[
+			"a new section in the middle",
+			"[breakfast]\na@1 1\n[dinner]\nb@1 1\n",
+			"lunch",
+		],
+		["a new section at the top", "[dinner]\nb@1 1\n", "breakfast"],
+		["a new section at the end", "[breakfast]\na@1 1", "dinner"],
+		["a new file", "", "snack"],
+	])(
+		"inserting a block into %s equals inserting its lines one at a time",
+		(_name, original, meal) => {
+			const entries = ["x@1 1", "y@1 2 g", '"z" kcal=3'];
+
+			expect(insertEntries(parseDay(original), meal, entries, meals)).toBe(
+				insertEach(original, meal, entries),
+			);
+		},
+	);
 });

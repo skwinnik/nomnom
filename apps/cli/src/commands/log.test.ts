@@ -46,6 +46,7 @@ describe("log", () => {
 				amount: "1",
 				unit: "medium sized apple",
 				nutrients: {},
+				entries: [],
 			},
 		]);
 	});
@@ -54,13 +55,19 @@ describe("log", () => {
 		const result = await run(["lunch", "rice@1", "80"]);
 
 		expect(result.calls).toEqual([
-			{ meal: "lunch", ref: "rice@1", amount: "80", nutrients: {} },
+			{
+				meal: "lunch",
+				ref: "rice@1",
+				amount: "80",
+				nutrients: {},
+				entries: [],
+			},
 		]);
 	});
 
 	test("logs an inline entry with nutrient options", async () => {
 		const dayLog = createDayLogServiceMock({
-			result: { line: '"restaurant ramen" kcal=800 protein=35' },
+			result: { lines: ['"restaurant ramen" kcal=800 protein=35'] },
 		});
 
 		const result = await run(
@@ -82,6 +89,41 @@ describe("log", () => {
 				meal: "dinner",
 				inline: "restaurant ramen",
 				nutrients: { kcal: "800", protein: "35" },
+				entries: [],
+			},
+		]);
+	});
+
+	test("passes repeated --entry values in order and prints every added line", async () => {
+		const lines = ["oats@2 60 g", '"coffee" kcal=5', "oats@2 60 g"];
+		const dayLog = createDayLogServiceMock({ result: { lines } });
+
+		const result = await run(
+			[
+				"breakfast",
+				"--entry",
+				"oats 60 g",
+				"--entry",
+				'"coffee" kcal=5',
+				"--entry",
+				"oats 60 g",
+				"--date",
+				"2026-09-30",
+			],
+			dayLog,
+		);
+
+		expect(result).toMatchObject({
+			code: 0,
+			out: 'oats@2 60 g\n"coffee" kcal=5\noats@2 60 g\n',
+			err: "",
+		});
+		expect(result.calls).toEqual([
+			{
+				meal: "breakfast",
+				date: "2026-09-30",
+				nutrients: {},
+				entries: ["oats 60 g", '"coffee" kcal=5', "oats 60 g"],
 			},
 		]);
 	});
@@ -174,13 +216,14 @@ describe("log", () => {
 		});
 	});
 
-	test("help lists the positionals, --inline, --date and every nutrient", async () => {
+	test("help lists the positionals, --entry, --inline, --date and every nutrient", async () => {
 		const result = await run(["--help"]);
 
 		expect(result.out).toContain(
 			"Usage: nomnom log <meal> [food] [amount] [unit...] [options]",
 		);
 		expect(result.out).toContain("--inline <description>");
+		expect(result.out).toMatch(/--entry <line> .* \(repeatable\)\n/);
 		expect(result.out).toContain("--date <yyyy-mm-dd>");
 		expect(result.out).toContain("--kcal <number>");
 		expect(result.out).toContain("--fiber <number>");

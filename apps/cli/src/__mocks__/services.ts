@@ -198,7 +198,7 @@ export function createDayLogServiceMock(
 			return {
 				path: "/data/logs/2026/2026-09-29.nom",
 				date: "2026-09-29",
-				line: "apple@2 1 medium sized apple",
+				lines: ["apple@2 1 medium sized apple"],
 				warnings: [],
 				...outcome.result,
 			};

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseDay, parseLine } from "./parse";
+import { parseDay, parseEntryText, parseLine } from "./parse";
 
 describe("parseDay", () => {
 	test("parses the example day, keeping raw text and line numbers", () => {
@@ -154,5 +154,73 @@ describe("parseLine", () => {
 
 		expect(content.kind).toBe("error");
 		expect(content.kind === "error" && content.message).toContain(message);
+	});
+});
+
+describe("parseEntryText", () => {
+	test("parses a reference with or without a version and unit", () => {
+		expect(parseEntryText("  apple 1  ")).toEqual({
+			kind: "reference",
+			ref: { slug: "apple" },
+			amount: 1,
+		});
+		expect(parseEntryText("apple@2   1 medium \t sized apple")).toEqual({
+			kind: "reference",
+			ref: { slug: "apple", version: 2 },
+			amount: 1,
+			unit: "medium sized apple",
+		});
+		expect(parseEntryText("rice@1 80 g")).toEqual({
+			kind: "reference",
+			ref: { slug: "rice", version: 1 },
+			amount: 80,
+			unit: "g",
+		});
+		expect(parseEntryText("granola 40 cup")).toMatchObject({
+			ref: { slug: "granola" },
+			unit: "cup",
+		});
+	});
+
+	test("parses an inline entry, keeping # inside the description", () => {
+		expect(parseEntryText('"ramen"   protein=35 kcal=800')).toEqual({
+			kind: "inline",
+			description: "ramen",
+			values: [
+				{ id: "protein", value: 35 },
+				{ id: "kcal", value: 800 },
+			],
+		});
+		expect(parseEntryText('"ramen # spicy" kcal=800')).toEqual({
+			kind: "inline",
+			description: "ramen # spicy",
+			values: [{ id: "kcal", value: 800 }],
+		});
+	});
+
+	test.each([
+		["a trailing comment on a reference", "apple 1 medium apple  # at work"],
+		["a trailing comment on an inline entry", '"ramen" kcal=800 # x'],
+		["a # in a unit", "apple 1 can#2"],
+	])("rejects %s as a comment", (_name, text) => {
+		expect(() => parseEntryText(text)).toThrow(
+			"entries can't contain comments ('#'); add comments to the day file by hand",
+		);
+	});
+
+	test.each([
+		["an empty value", "", "expected an entry such as"],
+		["a blank value", "   ", "expected an entry such as"],
+		["a comment", "# note", "expected an entry such as"],
+		["a section header", "[lunch]", "expected an entry such as"],
+		["a zero amount", "apple 0", "the amount must be a positive number"],
+		["a missing amount", "apple", "'apple' needs an amount"],
+		["a bad version", "apple@x 1", "positive whole number"],
+		["a bad slug", "../apple 1", "not a valid food or recipe name"],
+		["an unclosed description", '"ramen # kcal=800', "no closing"],
+		["an inline entry without values", '"ramen"', "needs nutrient values"],
+		["an amount in an inline entry", '"ramen" 1 bowl', "expected <nutrient>"],
+	])("rejects %s", (_name, text, message) => {
+		expect(() => parseEntryText(text)).toThrow(message);
 	});
 });

@@ -186,9 +186,10 @@ function usageError(io: Io, message: string, name: readonly string[]): number {
 
 function reportError(io: Io, error: unknown): void {
 	if (error instanceof NomnomError) {
-		const problems = error.problems.map(
-			(problem) =>
-				`${problem.file}${problem.line === undefined ? "" : `:${problem.line}`}: ${problem.message}\n`,
+		const problems = error.problems.map((problem) =>
+			problem.file === ""
+				? `${problem.message}\n`
+				: `${problem.file}${problem.line === undefined ? "" : `:${problem.line}`}: ${problem.message}\n`,
 		);
 		io.stderr(`error: ${error.message}\n${problems.join("")}`);
 		return;

@@ -24,6 +24,13 @@ export const log = defineCommand({
 		},
 	],
 	options: (ctx) => ({
+		entry: {
+			type: "string",
+			multiple: true,
+			valueName: "line",
+			description:
+				"An entry as in a day file: 'apple 1 medium apple' or '\"ramen\" kcal=800'; without a version the latest is pinned",
+		},
 		inline: {
 			type: "string",
 			valueName: "description",
@@ -46,7 +53,7 @@ export const log = defineCommand({
 		{ services, io }: CommandEnv<Pick<Services, "dayLog">>,
 	) => {
 		const [meal = "", ref, amount, ...unitWords] = positionals;
-		const { inline, date, ...rest } = values;
+		const { entry, inline, date, ...rest } = values;
 		const logged = await services.dayLog.log({
 			meal,
 			...(date === undefined ? {} : { date }),
@@ -55,8 +62,9 @@ export const log = defineCommand({
 			...(unitWords.length === 0 ? {} : { unit: unitWords.join(" ") }),
 			...(inline === undefined ? {} : { inline }),
 			nutrients: nutrientValues(rest),
+			entries: entry ?? [],
 		});
 		printWarnings(io, logged.warnings);
-		io.stdout(`${logged.line}\n`);
+		io.stdout(logged.lines.map((line) => `${line}\n`).join(""));
 	},
 });

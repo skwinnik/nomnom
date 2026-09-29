@@ -109,6 +109,11 @@ function setup() {
 						message: "unknown food",
 					},
 					{ file: "foods/apple.toml", message: "missing name" },
+					{
+						file: "",
+						message:
+							"entry 2 'unicorn 1': 'unicorn' is neither a food nor a recipe",
+					},
 				]);
 			},
 		}),
@@ -495,6 +500,7 @@ describe("error reporting and exit codes", () => {
 				"error: Day file has errors",
 				"logs/2026/2026-09-28.nom:4: unknown food",
 				"foods/apple.toml: missing name",
+				"entry 2 'unicorn 1': 'unicorn' is neither a food nor a recipe",
 				"",
 			].join("\n"),
 		);
