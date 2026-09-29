@@ -1,4 +1,10 @@
-import type { ItemSummary, NutrientAmount, StoredNutrient } from "@nomnom/core";
+import type {
+	ItemSummary,
+	NutrientAmount,
+	RecipeNutrients,
+	StoredNutrient,
+	VersionChange,
+} from "@nomnom/core";
 
 /**
  * Rows as aligned columns: every column but the last is padded to its widest
@@ -41,6 +47,57 @@ export function formatNutrients(
 		title,
 		nutrients.map((n) => [n.name, n.value.toFixed(1), n.unit]),
 	);
+}
+
+/** A recipe's nutrient tables: per serving and, with a yield, per 100 base units. */
+export function formatRecipeNutrients(nutrients: RecipeNutrients): string[] {
+	const tables = [formatNutrients("Per serving", nutrients.perServing)];
+	if (nutrients.perHundred) {
+		tables.push(
+			formatNutrients(
+				`Per 100 ${nutrients.perHundred.unit}`,
+				nutrients.perHundred.nutrients,
+			),
+		);
+	}
+	return tables;
+}
+
+/**
+ * The first lines of an update: `Updated <path> (version N)`, or after a
+ * rename `Created <path>` and `Archived <old path> (version N)`.
+ */
+export function formatUpdated(
+	path: string,
+	version: number,
+	archived?: { path: string; version: number },
+): string {
+	return archived
+		? `Created ${path}\nArchived ${archived.path} (version ${archived.version})\n`
+		: `Updated ${path} (version ${version})\n`;
+}
+
+/**
+ * One indented line per change: `<field>: <before> -> <after>` with `(none)`
+ * for an absent value, `<field>: added|removed <item>` and
+ * `<field>: order changed`. Nutrients are named by their id alone.
+ */
+export function formatChanges(changes: readonly VersionChange[]): string {
+	return changes.map((change) => `  ${formatChange(change)}\n`).join("");
+}
+
+function formatChange(change: VersionChange): string {
+	if (change.kind === "reordered") return `${change.field}: order changed`;
+	if (change.kind !== "changed") {
+		return `${change.field}: ${change.kind} ${change.item}`;
+	}
+	const label =
+		change.key === undefined
+			? change.field
+			: change.field === "nutrients"
+				? change.key
+				: `${change.field}.${change.key}`;
+	return `${label}: ${change.before ?? "(none)"} -> ${change.after ?? "(none)"}`;
 }
 
 /** A titled table of stored nutrient values, printed as stored, or `-` when absent. */

@@ -5,19 +5,26 @@ import { createStaticConfigService } from "../config/__mocks__/config-service";
 import { dataPaths } from "../data-dir/paths";
 import { NomnomError } from "../errors";
 import { createMemoryFileSystem } from "../fs/__mocks__/file-system";
+import type { FileSystem } from "../fs/file-system";
 import { localTimestamp } from "../shared/time";
 import { food, recipe } from "../store/__mocks__/versioned-store";
 import type { FoodVersion } from "../store/records";
-import { createVersionedStore } from "../store/versioned-store";
+import {
+	createVersionedStore,
+	type VersionedStore,
+} from "../store/versioned-store";
 import { serialiseFood, serialiseRecipe } from "../store/write";
 import { createFoodService, type FoodAddInput } from "./food-service";
 
 const now = new Date("2026-09-29T17:10:00Z");
 
-function setup(files: Record<string, string> = {}) {
+function setup(
+	files: Record<string, string> = {},
+	wrap: (fs: FileSystem) => FileSystem = (fs) => fs,
+) {
 	const fs = createMemoryFileSystem(files);
 	const store = createVersionedStore({
-		fs,
+		fs: wrap(fs),
 		clock: createFixedClock(now),
 		paths: dataPaths("/data"),
 	});
@@ -33,7 +40,7 @@ function setup(files: Record<string, string> = {}) {
 			nutrients: { kcal: "360" },
 			...input,
 		});
-	return { fs, add, foods };
+	return { fs, store, add, foods };
 }
 
 /** The file of a food with these versions. */
@@ -42,6 +49,16 @@ function foodFile(...versions: FoodVersion[]): string {
 }
 
 const pancakesFile = serialiseRecipe(recipe({ name: "Pancakes" }));
+
+/** A valid recipe, for commands that read it. */
+const validPancakesFile = serialiseRecipe(
+	recipe({
+		name: "Pancakes",
+		ingredients: [
+			{ kind: "food", slug: "apple", version: 1, amount: 100, unit: "g" },
+		],
+	}),
+);
 
 async function rejection(promise: Promise<unknown>): Promise<NomnomError> {
 	const error: unknown = await promise.catch((e) => e);
@@ -601,5 +618,482 @@ describe("food show by barcode", () => {
 		const error = await rejection(foods.show({ barcode: "4601234567890" }));
 
 		expect(error.message).toContain("/data/foods/rice.yaml");
+	});
+});
+
+/** The input of an update: the options of `food add`. */
+function input(fields: Partial<FoodAddInput> = {}): FoodAddInput {
+	return { name: "Apple", baseUnit: "g", nutrients: { kcal: "52" }, ...fields };
+}
+
+describe("food update", () => {
+	const appleV2 = food({
+		name: "Apple",
+		version: 2,
+		nutrients: { kcal: 52, protein: 0.3, fiber: 2.4 },
+		units: { "small sized apple": 134 },
+	});
+	const appleFile = foodFile(food({ name: "Apple" }), appleV2);
+
+	function updateSetup(files: Record<string, string> = {}) {
+		return setup({
+			"/data/foods/apple.yaml": appleFile,
+			"/data/recipes/pancakes.yaml": validPancakesFile,
+			...files,
+		});
+	}
+
+	test("adds a version with a changed value, reporting only that change", async () => {
+		const { fs, foods } = updateSetup({
+			"/data/foods/apple.yaml": foodFile(
+				food({ name: "Apple" }),
+				food({
+					name: "Apple",
+					version: 2,
+					nutrients: { kcal: 52, protein: 0.3 },
+				}),
+			),
+		});
+		const before = fs.files.get("/data/foods/apple.yaml") ?? "";
+
+		const updated = await foods.update(
+			"apple",
+			input({ nutrients: { kcal: "55", protein: "0.3" } }),
+		);
+
+		expect(updated.slug).toBe("apple");
+		expect(updated.path).toBe("/data/foods/apple.yaml");
+		expect(updated.food.version).toBe(3);
+		expect(updated.food.nutrients.get("kcal")).toBe(55);
+		expect(updated.archived).toBeUndefined();
+		expect(updated.changes).toEqual([
+			{
+				kind: "changed",
+				field: "nutrients",
+				key: "kcal",
+				before: "52",
+				after: "55",
+			},
+		]);
+		expect(fs.files.get("/data/foods/apple.yaml")).toStartWith(before);
+	});
+
+	test("carries over no omitted field", async () => {
+		const { foods } = updateSetup();
+
+		const { food: saved, changes } = await foods.update("apple", input());
+
+		expect(saved.nutrients).toEqual(new Map([["kcal", 52]]));
+		expect(saved.units.size).toBe(0);
+		expect(changes).toEqual([
+			{ kind: "changed", field: "nutrients", key: "protein", before: "0.3" },
+			{ kind: "changed", field: "nutrients", key: "fiber", before: "2.4" },
+			{
+				kind: "changed",
+				field: "units",
+				key: "small sized apple",
+				before: "134",
+			},
+		]);
+	});
+
+	test("applies the default per", async () => {
+		const { foods } = setup({
+			"/data/foods/egg.yaml": foodFile(
+				food({ name: "Egg", baseUnit: "egg", per: 1, nutrients: { kcal: 70 } }),
+			),
+		});
+
+		const { food: saved, changes } = await foods.update(
+			"egg",
+			input({ name: "Egg", baseUnit: "egg", nutrients: { kcal: "70" } }),
+		);
+
+		expect(saved.version).toBe(2);
+		expect(saved.per).toBe(100);
+		expect(changes).toEqual([
+			{ kind: "changed", field: "per", before: "1", after: "100" },
+		]);
+	});
+
+	test("a name change that keeps the slug adds to the same file", async () => {
+		const { fs, foods } = updateSetup();
+
+		const updated = await foods.update("apple", input({ name: "APPLE" }));
+
+		expect(updated.path).toBe("/data/foods/apple.yaml");
+		expect(updated.food.version).toBe(3);
+		expect([...fs.files.keys()].filter((p) => p.includes("/foods/"))).toEqual([
+			"/data/foods/apple.yaml",
+		]);
+	});
+
+	test("a rename creates a new file and archives the old food", async () => {
+		const { fs, store, foods } = updateSetup();
+
+		const updated = await foods.update(
+			"apple",
+			input({ name: "Green Apple", nutrients: { kcal: "52" } }),
+		);
+
+		expect(updated.slug).toBe("green-apple");
+		expect(updated.path).toBe("/data/foods/green-apple.yaml");
+		expect(updated.food.version).toBe(1);
+		expect(updated.archived).toMatchObject({
+			slug: "apple",
+			path: "/data/foods/apple.yaml",
+			food: { version: 3, archived: true },
+		});
+		expect(updated.changes[0]).toEqual({
+			kind: "changed",
+			field: "name",
+			before: "Apple",
+			after: "Green Apple",
+		});
+		const apple = await store.readFood("apple");
+		expect(apple?.[2]).toEqual({
+			...appleV2,
+			version: 3,
+			created: localTimestamp(now),
+			archived: true,
+		});
+		expect(fs.files.get("/data/foods/apple.yaml")).toStartWith(appleFile);
+		expect(fs.files.get("/data/recipes/pancakes.yaml")).toBe(validPancakesFile);
+	});
+
+	test("a rename onto an archived slug fails without writing", async () => {
+		const greenApple = foodFile(
+			food({ name: "Green Apple" }),
+			food({ name: "Green Apple", version: 2, archived: true }),
+		);
+		const { fs, foods } = updateSetup({
+			"/data/foods/green-apple.yaml": greenApple,
+		});
+
+		const error = await rejection(
+			foods.update("apple", input({ name: "Green Apple" })),
+		);
+
+		expect(error.message).toBe(
+			"'green-apple' already exists: it is already used by a food (archived)",
+		);
+		expect(fs.files.get("/data/foods/apple.yaml")).toBe(appleFile);
+		expect(fs.files.get("/data/foods/green-apple.yaml")).toBe(greenApple);
+	});
+
+	test("an archiving write that fails after the new file was created names both and the fix", async () => {
+		const { fs, foods } = setup(
+			{ "/data/foods/apple.yaml": appleFile },
+			(inner) => ({
+				...inner,
+				replaceAtomic: async () => {
+					throw new Error("disk full");
+				},
+			}),
+		);
+
+		const error = await rejection(
+			foods.update("apple", input({ name: "Green Apple" })),
+		);
+
+		expect(error.message).toBe(
+			"Created /data/foods/green-apple.yaml, but archiving 'apple' failed: disk full. Run 'nomnom food archive apple' to archive it",
+		);
+		expect(fs.files.has("/data/foods/green-apple.yaml")).toBe(true);
+		expect(fs.files.get("/data/foods/apple.yaml")).toBe(appleFile);
+	});
+
+	test("an update keeps the food's own barcode", async () => {
+		const { foods } = setup({
+			"/data/foods/milk-4600000000001.yaml": foodFile(
+				food({ name: "Milk", barcodes: ["4600000000001"] }),
+			),
+		});
+
+		const updated = await foods.update(
+			"milk-4600000000001",
+			input({
+				name: "Milk",
+				barcodes: ["4600000000001"],
+				nutrients: { kcal: "64" },
+			}),
+		);
+
+		expect(updated.path).toBe("/data/foods/milk-4600000000001.yaml");
+		expect(updated.food.version).toBe(2);
+	});
+
+	test("a second barcode keeps the slug", async () => {
+		const { foods } = setup({
+			"/data/foods/milk-4600000000001.yaml": foodFile(
+				food({
+					name: "Milk",
+					barcodes: ["4600000000001"],
+					nutrients: { kcal: 52 },
+				}),
+			),
+		});
+
+		const updated = await foods.update(
+			"milk-4600000000001",
+			input({ name: "Milk", barcodes: ["4600000000001", "4600000000002"] }),
+		);
+
+		expect(updated.path).toBe("/data/foods/milk-4600000000001.yaml");
+		expect(updated.changes).toEqual([
+			{ kind: "added", field: "barcodes", item: "4600000000002" },
+		]);
+	});
+
+	test("a rename keeps the barcode", async () => {
+		const { store, foods } = setup({
+			"/data/foods/milk-4600000000001.yaml": foodFile(
+				food({ name: "Milk", baseUnit: "ml", barcodes: ["4600000000001"] }),
+			),
+		});
+
+		const updated = await foods.update(
+			"milk-4600000000001",
+			input({
+				name: "Whole Milk",
+				baseUnit: "ml",
+				nutrients: { kcal: "64" },
+				barcodes: ["4600000000001"],
+			}),
+		);
+
+		expect(updated.path).toBe("/data/foods/whole-milk-4600000000001.yaml");
+		expect(updated.food.version).toBe(1);
+		const milk = await store.readFood("milk-4600000000001");
+		expect(milk?.at(-1)?.archived).toBe(true);
+	});
+
+	test("a barcode another food has fails without writing", async () => {
+		const files = {
+			"/data/foods/cola-034000470693.yaml": foodFile(
+				food({ name: "Cola", barcodes: ["034000470693"] }),
+			),
+			"/data/foods/milk-4600000000001.yaml": foodFile(
+				food({ name: "Milk", barcodes: ["4600000000001"] }),
+			),
+		};
+		const { fs, foods } = setup(files);
+
+		const error = await rejection(
+			foods.update(
+				"milk-4600000000001",
+				input({
+					name: "Milk",
+					barcodes: ["4600000000001", "0034000470693"],
+				}),
+			),
+		);
+
+		expect(error.message).toBe(
+			"Barcode '0034000470693' already belongs to the food 'cola-034000470693'",
+		);
+		expect(Object.fromEntries(fs.files)).toEqual(files);
+	});
+
+	test("an identical update fails without writing", async () => {
+		const { fs, foods } = updateSetup();
+
+		const error = await rejection(
+			foods.update(
+				"apple",
+				input({
+					nutrients: { kcal: "52", protein: "0.3", fiber: "2.4" },
+					units: ["small sized apple=134"],
+				}),
+			),
+		);
+
+		expect(error.message).toBe(
+			"Nothing changed: the values are those of apple@2",
+		);
+		expect(fs.files.get("/data/foods/apple.yaml")).toBe(appleFile);
+	});
+
+	test("an archived food fails without writing", async () => {
+		const archived = foodFile(
+			food({ name: "Apple" }),
+			food({ name: "Apple", version: 2, archived: true }),
+		);
+		const { fs, foods } = setup({ "/data/foods/apple.yaml": archived });
+
+		const error = await rejection(
+			foods.update("apple", input({ name: "Green Apple" })),
+		);
+
+		expect(error.message).toBe(
+			"'apple' is archived and must be unarchived first",
+		);
+		expect([...fs.files]).toEqual([["/data/foods/apple.yaml", archived]]);
+	});
+
+	test("a recipe's slug fails, naming it a recipe", async () => {
+		const { foods } = updateSetup();
+
+		const error = await rejection(foods.update("pancakes", input()));
+
+		expect(error.message).toBe("'pancakes' is a recipe, not a food");
+	});
+
+	test("an unknown slug fails without creating a file", async () => {
+		const { fs, foods } = updateSetup();
+
+		const error = await rejection(foods.update("unicorn", input()));
+
+		expect(error.message).toBe("'unicorn' is neither a food nor a recipe");
+		expect(fs.files.size).toBe(2);
+	});
+
+	test("an invalid value fails as for food add", async () => {
+		const { fs, foods } = updateSetup();
+
+		const error = await rejection(foods.update("apple", input({ per: "0" })));
+
+		expect(error.message).toContain("'per' must be a positive number");
+		expect(fs.files.get("/data/foods/apple.yaml")).toBe(appleFile);
+	});
+
+	test("a broken food file fails the update", async () => {
+		const { foods } = updateSetup({ "/data/foods/rice.yaml": "version: [" });
+
+		const error = await rejection(
+			foods.update("apple", input({ nutrients: { kcal: "55" } })),
+		);
+
+		expect(error.message).toContain("/data/foods/rice.yaml");
+	});
+});
+
+describe("food archive and unarchive", () => {
+	const appleV2 = food({ name: "Apple", version: 2, nutrients: { kcal: 52 } });
+
+	function archiveSetup(files: Record<string, string> = {}) {
+		return setup({
+			"/data/foods/apple.yaml": foodFile(food({ name: "Apple" }), appleV2),
+			"/data/recipes/pancakes.yaml": validPancakesFile,
+			...files,
+		});
+	}
+
+	const newReference = (store: VersionedStore) =>
+		createCatalog({ store }).resolve({ slug: "apple" }, { newReference: true });
+
+	test("archive adds a copy of the latest version with archived: true", async () => {
+		const { store, foods } = archiveSetup();
+
+		const archived = await foods.archive("apple");
+
+		expect(archived).toEqual({
+			slug: "apple",
+			path: "/data/foods/apple.yaml",
+			food: {
+				...appleV2,
+				version: 3,
+				created: localTimestamp(now),
+				archived: true,
+			},
+		});
+		expect((await store.readFood("apple"))?.[2]).toEqual(archived.food);
+		expect((await rejection(newReference(store))).message).toBe(
+			"'apple' is archived and can't be newly referenced",
+		);
+	});
+
+	test("unarchive adds a copy of the latest version without archived", async () => {
+		const { fs, store, foods } = archiveSetup();
+		await foods.archive("apple");
+
+		const unarchived = await createFoodService({
+			config: createStaticConfigService(),
+			catalog: createCatalog({ store }),
+			store,
+		}).unarchive("apple");
+
+		expect(unarchived.food).toMatchObject({ version: 4, archived: false });
+		expect(fs.files.get("/data/foods/apple.yaml")).not.toMatch(
+			/version: 4[\s\S]*archived/,
+		);
+		expect((await newReference(store)).record.version).toBe(4);
+	});
+
+	test("archiving an archived food fails without writing", async () => {
+		const file = foodFile(
+			food({ name: "Apple" }),
+			food({ name: "Apple", version: 2, archived: true }),
+		);
+		const { fs, foods } = archiveSetup({ "/data/foods/apple.yaml": file });
+
+		const error = await rejection(foods.archive("apple"));
+
+		expect(error.message).toBe("'apple' is already archived");
+		expect(fs.files.get("/data/foods/apple.yaml")).toBe(file);
+	});
+
+	test("unarchiving a food that is not archived fails without writing", async () => {
+		const { fs, foods } = archiveSetup();
+		const before = fs.files.get("/data/foods/apple.yaml");
+
+		const error = await rejection(foods.unarchive("apple"));
+
+		expect(error.message).toBe("'apple' is not archived");
+		expect(fs.files.get("/data/foods/apple.yaml")).toBe(before);
+	});
+
+	test("a recipe's slug fails, naming it a recipe", async () => {
+		const { foods } = archiveSetup();
+
+		expect((await rejection(foods.archive("pancakes"))).message).toBe(
+			"'pancakes' is a recipe, not a food",
+		);
+		expect((await rejection(foods.unarchive("pancakes"))).message).toBe(
+			"'pancakes' is a recipe, not a food",
+		);
+	});
+
+	test("unarchiving fails when another food took a barcode meanwhile", async () => {
+		const cola = foodFile(
+			food({ name: "Cola", barcodes: ["034000470693"] }),
+			food({
+				name: "Cola",
+				version: 2,
+				barcodes: ["034000470693"],
+				archived: true,
+			}),
+		);
+		const { fs, foods } = setup({
+			"/data/foods/cola-034000470693.yaml": cola,
+			"/data/foods/coca-cola-034000470693.yaml": foodFile(
+				food({ name: "Coca Cola", barcodes: ["034000470693"] }),
+			),
+		});
+
+		const error = await rejection(foods.unarchive("cola-034000470693"));
+
+		expect(error.message).toBe(
+			"Can't unarchive 'cola-034000470693': barcode '034000470693' now belongs to the food 'coca-cola-034000470693'",
+		);
+		expect(fs.files.get("/data/foods/cola-034000470693.yaml")).toBe(cola);
+	});
+
+	test("unarchiving keeps the food's own barcodes", async () => {
+		const { foods } = setup({
+			"/data/foods/cola-034000470693.yaml": foodFile(
+				food({ name: "Cola", barcodes: ["034000470693"] }),
+				food({
+					name: "Cola",
+					version: 2,
+					barcodes: ["034000470693"],
+					archived: true,
+				}),
+			),
+		});
+
+		const { food: saved } = await foods.unarchive("cola-034000470693");
+
+		expect(saved.barcodes).toEqual(["034000470693"]);
 	});
 });

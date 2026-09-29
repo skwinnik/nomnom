@@ -201,3 +201,152 @@ describe("listing", () => {
 		);
 	});
 });
+
+describe("appending", () => {
+	const later = new Date("2026-09-30T08:00:00Z");
+
+	async function withApple(files: Record<string, string> = {}) {
+		const { fs, store } = setup(files);
+		await store.createFood("apple", apple);
+		const first = fs.files.get("/data/foods/apple.yaml") ?? "";
+		return { fs, store, first };
+	}
+
+	test("keeps the earlier text as an exact prefix and numbers the new version", async () => {
+		const { fs, store, first } = await withApple();
+		await store.appendFood("apple", { ...apple, per: 50 });
+		const second = fs.files.get("/data/foods/apple.yaml") ?? "";
+
+		const appended = await store.appendFood("apple", {
+			...apple,
+			nutrients: new Map([["kcal", 55]]),
+			archived: true,
+		});
+		const third = fs.files.get("/data/foods/apple.yaml") ?? "";
+
+		expect(second.startsWith(first)).toBe(true);
+		expect(third.startsWith(second)).toBe(true);
+		expect(third.slice(second.length)).toStartWith("---\nversion: 3\n");
+		expect(appended.path).toBe("/data/foods/apple.yaml");
+		expect(appended.record).toMatchObject({ version: 3, archived: true });
+		const read = await store.readFood("apple");
+		expect(read?.map((v) => [v.version, v.per, v.archived])).toEqual([
+			[1, 100, false],
+			[2, 50, false],
+			[3, 100, true],
+		]);
+		expect(read?.[2]).toEqual(appended.record);
+	});
+
+	test("stamps the new version from the clock", async () => {
+		const fs = createMemoryFileSystem();
+		const clock = createFixedClock(now);
+		const store = createVersionedStore({
+			fs,
+			clock,
+			paths: dataPaths("/data"),
+		});
+		await store.createFood("apple", apple);
+		clock.set(later);
+
+		const { record } = await store.appendFood("apple", apple);
+
+		expect(record.created).toBe(localTimestamp(later));
+	});
+
+	test("takes the version number from the file, not the caller", async () => {
+		const { store } = await withApple();
+		const fields = { ...apple, version: 7, created: "x" };
+
+		const { record } = await store.appendFood("apple", fields);
+
+		expect(record.version).toBe(2);
+		expect(record.created).toBe(localTimestamp(now));
+		expect((await store.readFood("apple"))?.[1]?.version).toBe(2);
+	});
+
+	test("adds a newline to a file without a final one", async () => {
+		const text = [
+			"---",
+			"version: 1",
+			"created: 2026-09-01T08:00:00+03:00",
+			"name: Apple",
+			"base_unit: g",
+			"per: 100",
+			"nutrients: { kcal: 52 }",
+		].join("\n");
+		const { fs, store } = setup({ "/data/foods/apple.yaml": text });
+
+		await store.appendFood("apple", apple);
+
+		expect(fs.files.get("/data/foods/apple.yaml")).toStartWith(
+			`${text}\n---\nversion: 2\n`,
+		);
+		const read = await store.readFood("apple");
+		expect(read?.map((v) => v.version)).toEqual([1, 2]);
+		expect(read?.[0]?.nutrients).toEqual(new Map([["kcal", 52]]));
+	});
+
+	test("reports a missing file without writing", async () => {
+		const { fs, store } = setup();
+
+		const error = await store.appendFood("apple", apple).catch((e) => e);
+
+		expect(error).toBeInstanceOf(NomnomError);
+		expect(error.message).toBe(
+			"There is no food 'apple': /data/foods/apple.yaml",
+		);
+		expect(fs.files.size).toBe(0);
+	});
+
+	test("reports an invalid file without writing", async () => {
+		const text = "---\nversion: 1\nname: Apple\n";
+		const { fs, store } = setup({ "/data/foods/apple.yaml": text });
+
+		const error = await store.appendFood("apple", apple).catch((e) => e);
+
+		expect(error).toBeInstanceOf(NomnomError);
+		expect(error.message).toBe("/data/foods/apple.yaml is invalid");
+		expect(fs.files.get("/data/foods/apple.yaml")).toBe(text);
+	});
+
+	test("appends a recipe version with its ingredient pins", async () => {
+		const { fs, store } = setup();
+		const soup: NewRecipeVersion = {
+			name: "Soup",
+			servings: 2,
+			units: new Map(),
+			ingredients: [
+				{ kind: "food", slug: "carrot", version: 1, amount: 2, unit: "g" },
+			],
+		};
+		await store.createRecipe("soup", soup);
+		const first = fs.files.get("/data/recipes/soup.yaml") ?? "";
+
+		const { path, record } = await store.appendRecipe("soup", {
+			...soup,
+			archived: true,
+		});
+
+		expect(path).toBe("/data/recipes/soup.yaml");
+		expect(fs.files.get(path)).toStartWith(first);
+		expect(await store.readRecipe("soup")).toEqual([
+			{ ...soup, version: 1, created: localTimestamp(now), archived: false },
+			record,
+		]);
+		expect(record).toMatchObject({ version: 2, archived: true });
+	});
+
+	test("reports a missing recipe file", async () => {
+		const { store } = setup();
+
+		await expect(
+			store.appendRecipe("soup", {
+				name: "Soup",
+				servings: 1,
+				units: new Map(),
+				ingredients: [],
+			}),
+		).rejects.toThrow("There is no recipe 'soup': /data/recipes/soup.yaml");
+	});
+});

@@ -12,9 +12,11 @@ export { NomnomError, type Problem } from "./errors";
 export type {
 	FoodAdded,
 	FoodAddInput,
+	FoodArchived,
 	FoodService,
 	FoodShowInput,
 	FoodShown,
+	FoodUpdated,
 	StoredNutrient,
 } from "./foods/food-service";
 export { createBunFileSystem } from "./fs/bun-file-system";
@@ -29,8 +31,11 @@ export type {
 	NutrientAmount,
 	RecipeAdded,
 	RecipeAddInput,
+	RecipeArchived,
+	RecipeNutrients,
 	RecipeService,
 	RecipeShown,
+	RecipeUpdated,
 } from "./recipes/recipe-service";
 export type {
 	Report,
@@ -47,6 +52,7 @@ export {
 	type Services,
 } from "./services";
 export { BUILT_IN_OPTION_NAMES } from "./shared/options";
+export type { VersionChange } from "./store/diff";
 export type {
 	FoodVersion,
 	Ingredient,

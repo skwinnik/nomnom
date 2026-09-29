@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import {
+	formatChanges,
 	formatColumns,
 	formatItems,
 	formatNutrients,
 	formatStoredNutrients,
+	formatUpdated,
 } from "./format";
 
 describe("formatItems", () => {
@@ -100,5 +102,72 @@ describe("formatNutrients", () => {
 				{ id: "fat", name: "Fat", unit: "g", value: 0 },
 			]),
 		).toBe("Per serving:\n  Energy  136.3 kcal\n  Fat       0.0 g\n");
+	});
+});
+
+describe("formatUpdated", () => {
+	test("names the file and the new version", () => {
+		expect(formatUpdated("/data/foods/apple.yaml", 3)).toBe(
+			"Updated /data/foods/apple.yaml (version 3)\n",
+		);
+	});
+
+	test("after a rename, names the created file and the archived one", () => {
+		expect(
+			formatUpdated("/data/foods/green-apple.yaml", 1, {
+				path: "/data/foods/apple.yaml",
+				version: 3,
+			}),
+		).toBe(
+			"Created /data/foods/green-apple.yaml\nArchived /data/foods/apple.yaml (version 3)\n",
+		);
+	});
+});
+
+describe("formatChanges", () => {
+	test("prints one indented line per change", () => {
+		expect(
+			formatChanges([
+				{ kind: "changed", field: "name", before: "Apple", after: "APPLE" },
+				{
+					kind: "changed",
+					field: "nutrients",
+					key: "kcal",
+					before: "52",
+					after: "55",
+				},
+				{ kind: "changed", field: "nutrients", key: "fiber", before: "2.4" },
+				{
+					kind: "changed",
+					field: "units",
+					key: "small sized apple",
+					before: "134",
+				},
+				{ kind: "changed", field: "units", key: "bowl", after: "350" },
+				{ kind: "removed", field: "barcodes", item: "4600000000001" },
+				{
+					kind: "added",
+					field: "ingredients",
+					item: "carrot@2 2 medium carrot",
+				},
+				{ kind: "reordered", field: "barcodes" },
+			]),
+		).toBe(
+			[
+				"  name: Apple -> APPLE",
+				"  kcal: 52 -> 55",
+				"  fiber: 2.4 -> (none)",
+				"  units.small sized apple: 134 -> (none)",
+				"  units.bowl: (none) -> 350",
+				"  barcodes: removed 4600000000001",
+				"  ingredients: added carrot@2 2 medium carrot",
+				"  barcodes: order changed",
+				"",
+			].join("\n"),
+		);
+	});
+
+	test("is empty without changes", () => {
+		expect(formatChanges([])).toBe("");
 	});
 });

@@ -10,7 +10,7 @@ import {
 } from "../store/__mocks__/versioned-store";
 import { createVersionedStore } from "../store/versioned-store";
 import { serialiseFood } from "../store/write";
-import { createCatalog, isArchived } from "./catalog";
+import { createCatalog, findOfKind, isArchived } from "./catalog";
 
 function setup() {
 	const store = createFakeStore({
@@ -216,5 +216,30 @@ describe("all", () => {
 
 		// Once per slug: apple, pancakes and pear.
 		expect(reads).toBe(3);
+	});
+});
+
+describe("findOfKind", () => {
+	test("returns an item of the kind", async () => {
+		const { catalog } = setup();
+
+		expect((await findOfKind(catalog, "apple", "food")).slug).toBe("apple");
+		expect((await findOfKind(catalog, "pancakes", "recipe")).kind).toBe(
+			"recipe",
+		);
+	});
+
+	test("names the other kind or neither", async () => {
+		const { catalog } = setup();
+
+		await expect(findOfKind(catalog, "pancakes", "food")).rejects.toThrow(
+			"'pancakes' is a recipe, not a food",
+		);
+		await expect(findOfKind(catalog, "apple", "recipe")).rejects.toThrow(
+			"'apple' is a food, not a recipe",
+		);
+		await expect(findOfKind(catalog, "unicorn", "food")).rejects.toThrow(
+			"'unicorn' is neither a food nor a recipe",
+		);
 	});
 });

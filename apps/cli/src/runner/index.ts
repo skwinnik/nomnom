@@ -7,6 +7,7 @@ export {
 	type Io,
 	type OptionSpec,
 	type OptionSpecs,
+	type OptionValues,
 	type PositionalSpec,
 } from "./command";
 export { type RunCliInput, runCli } from "./run-cli";

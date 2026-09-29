@@ -1,9 +1,12 @@
 import {
 	type Catalog,
 	type CatalogItem,
+	findOfKind,
 	type ItemSummary,
 	isArchived,
+	latestOf,
 	pickVersion,
+	renameIncomplete,
 	summarise,
 } from "../catalog/catalog";
 import { measureOf } from "../catalog/units";
@@ -20,7 +23,12 @@ import { settleInOrder } from "../shared/promises";
 import { parseAmountRef, parseItemRef } from "../shared/references";
 import { slugify } from "../shared/slug";
 import { normaliseUnitName, parseUnits, SERVING } from "../shared/units";
-import type { Ingredient, RecipeVersion } from "../store/records";
+import { diffRecipe, type VersionChange } from "../store/diff";
+import type {
+	Ingredient,
+	NewRecipeVersion,
+	RecipeVersion,
+} from "../store/records";
 import type { VersionedStore } from "../store/versioned-store";
 
 /** A new recipe as typed on the command line: every value is still text. */
@@ -45,15 +53,39 @@ export interface NutrientAmount {
 	value: number;
 }
 
-export interface RecipeAdded {
-	slug: string;
-	/** The path of the created file. */
-	path: string;
-	recipe: RecipeVersion;
+/** The calculated nutrients of a recipe version. */
+export interface RecipeNutrients {
 	/** Every catalog nutrient, in catalog order. */
 	perServing: NutrientAmount[];
 	/** Present when the recipe has a yield: nutrients in 100 base units. */
 	perHundred?: { unit: string; nutrients: NutrientAmount[] };
+}
+
+export interface RecipeAdded extends RecipeNutrients {
+	slug: string;
+	/** The path of the created file. */
+	path: string;
+	recipe: RecipeVersion;
+}
+
+/** A recipe version written by `update`, what changed and its nutrients. */
+export interface RecipeUpdated extends RecipeNutrients {
+	/** The slug of the written version: the old one, or a new one after a rename. */
+	slug: string;
+	/** The path of the file the version was added to, or of the created file. */
+	path: string;
+	recipe: RecipeVersion;
+	/** Present when the update renamed the recipe: the archiving version of the old one. */
+	archived?: RecipeArchived;
+	/** Every difference from the latest version of the old recipe. */
+	changes: VersionChange[];
+}
+
+/** The version `archive` or `unarchive` added. */
+export interface RecipeArchived {
+	slug: string;
+	path: string;
+	recipe: RecipeVersion;
 }
 
 /** A unit a recipe version allows. */
@@ -84,6 +116,17 @@ export interface RecipeService {
 	 * then writes it as version 1. Writes nothing when anything fails.
 	 */
 	add(input: RecipeAddInput): Promise<RecipeAdded>;
+	/**
+	 * Validates a recipe as `add` does and writes it as the next version of the
+	 * recipe `slug`. When the name gives another slug, it creates that file
+	 * instead and archives the old recipe. Writes nothing when anything fails,
+	 * the recipe is archived or nothing changed.
+	 */
+	update(slug: string, input: RecipeAddInput): Promise<RecipeUpdated>;
+	/** Adds a copy of the latest version, pins included, with `archived: true`. */
+	archive(slug: string): Promise<RecipeArchived>;
+	/** Adds a copy of the latest version, pins included, without `archived`. */
+	unarchive(slug: string): Promise<RecipeArchived>;
 	/** Every non-archived recipe by its latest version, in slug order. */
 	list(): Promise<ItemSummary[]>;
 	/** One version of a recipe, `<slug>[@<version>]`, with its calculated nutrients. */
@@ -100,8 +143,13 @@ export function createRecipeService(deps: {
 }): RecipeService {
 	const { config, catalog, nutrition, store } = deps;
 
-	const pin = async (text: string): Promise<Ingredient> => {
+	const pin = async (text: string, self?: string): Promise<Ingredient> => {
 		const ref = parseAmountRef(text);
+		if (ref.slug === self) {
+			throw new NomnomError(
+				`A recipe can't contain itself: '${text}' references '${self}'`,
+			);
+		}
 		const item = await catalog.resolve(ref, { newReference: true });
 		const unit = ref.unit ?? measureOf(item).defaultUnit;
 		unitFactor(item, unit);
@@ -112,6 +160,89 @@ export function createRecipeService(deps: {
 			amount: ref.amount,
 			unit,
 		};
+	};
+
+	/**
+	 * Validates a recipe as typed, pins its ingredients as new references,
+	 * derives its slug and calculates its nutrients, as `add` and `update` do.
+	 * An ingredient may not reference `self`, the recipe being updated.
+	 */
+	const prepare = async (
+		input: RecipeAddInput,
+		self?: string,
+	): Promise<{
+		slug: string;
+		recipe: NewRecipeVersion;
+		nutrients: RecipeNutrients;
+	}> => {
+		const { nutrients: nutrientCatalog } = await config.load();
+		const name = input.name.trim();
+		if (name === "") throw new NomnomError("The name must not be empty");
+		if (input.ingredients.length === 0) {
+			throw new NomnomError("A recipe needs at least one --ingredient");
+		}
+		const servings = parseNumber(
+			input.servings ?? "1",
+			"'servings'",
+			"positive",
+		);
+		const cooked = parseYield(input);
+		const units = parseUnits(input.units ?? [], cooked?.baseUnit);
+		if (units.has(SERVING)) {
+			throw new NomnomError(
+				`'${SERVING}' is reserved: every recipe has it as 1 / servings of the recipe`,
+			);
+		}
+		if (units.size > 0 && !cooked) {
+			throw new NomnomError(
+				"Units need a yield: give --yield and --base-unit too",
+			);
+		}
+
+		const ingredients: Ingredient[] = [];
+		for (const text of input.ingredients) {
+			ingredients.push(await pin(text, self));
+		}
+
+		const slug = slugify(name);
+		const totals = await nutrition.sumOf(ingredients);
+		return {
+			slug,
+			recipe: {
+				name,
+				servings,
+				...(cooked ? { yield: cooked } : {}),
+				units,
+				ingredients,
+			},
+			nutrients: {
+				perServing: amounts(nutrientCatalog, totals, 1 / servings),
+				...(cooked
+					? {
+							perHundred: {
+								unit: cooked.baseUnit,
+								nutrients: amounts(
+									nutrientCatalog,
+									totals,
+									100 / cooked.amount,
+								),
+							},
+						}
+					: {}),
+			},
+		};
+	};
+
+	/** Adds a copy of the latest version with `archived` set as given, keeping its pins as they are. */
+	const setArchived = async (
+		item: RecipeItem,
+		archived: boolean,
+	): Promise<RecipeArchived> => {
+		const { path, record } = await store.appendRecipe(item.slug, {
+			...latestOf(item),
+			archived,
+		});
+		return { slug: item.slug, path, recipe: record };
 	};
 
 	/** Every recipe, in slug order. Fails when any recipe file is invalid. */
@@ -169,62 +300,72 @@ export function createRecipeService(deps: {
 		},
 
 		async add(input) {
-			const { nutrients: nutrientCatalog } = await config.load();
-			const name = input.name.trim();
-			if (name === "") throw new NomnomError("The name must not be empty");
-			if (input.ingredients.length === 0) {
-				throw new NomnomError("A recipe needs at least one --ingredient");
-			}
-			const servings = parseNumber(
-				input.servings ?? "1",
-				"'servings'",
-				"positive",
+			const prepared = await prepare(input);
+			await catalog.ensureSlugFree(prepared.slug);
+			const { path, record } = await store.createRecipe(
+				prepared.slug,
+				prepared.recipe,
 			);
-			const cooked = parseYield(input);
-			const units = parseUnits(input.units ?? [], cooked?.baseUnit);
-			if (units.has(SERVING)) {
-				throw new NomnomError(
-					`'${SERVING}' is reserved: every recipe has it as 1 / servings of the recipe`,
-				);
-			}
-			if (units.size > 0 && !cooked) {
-				throw new NomnomError(
-					"Units need a yield: give --yield and --base-unit too",
-				);
-			}
-
-			const ingredients: Ingredient[] = [];
-			for (const text of input.ingredients) ingredients.push(await pin(text));
-
-			const slug = slugify(name);
-			await catalog.ensureSlugFree(slug);
-			const totals = await nutrition.sumOf(ingredients);
-
-			const { path, record } = await store.createRecipe(slug, {
-				name,
-				servings,
-				...(cooked ? { yield: cooked } : {}),
-				units,
-				ingredients,
-			});
 			return {
-				slug,
+				slug: prepared.slug,
 				path,
 				recipe: record,
-				perServing: amounts(nutrientCatalog, totals, 1 / servings),
-				...(cooked
-					? {
-							perHundred: {
-								unit: cooked.baseUnit,
-								nutrients: amounts(
-									nutrientCatalog,
-									totals,
-									100 / cooked.amount,
-								),
-							},
-						}
-					: {}),
+				...prepared.nutrients,
 			};
+		},
+
+		async update(slug, input) {
+			const item = await findOfKind(catalog, slug, "recipe");
+			if (isArchived(item)) {
+				throw new NomnomError(
+					`'${slug}' is archived and must be unarchived first`,
+				);
+			}
+			const prepared = await prepare(input, slug);
+			const latest = latestOf(item);
+			const changes = diffRecipe(latest, prepared.recipe);
+			if (prepared.slug === slug) {
+				if (changes.length === 0) {
+					throw new NomnomError(
+						`Nothing changed: the values are those of ${slug}@${latest.version}`,
+					);
+				}
+				const { path, record } = await store.appendRecipe(
+					slug,
+					prepared.recipe,
+				);
+				return { slug, path, recipe: record, changes, ...prepared.nutrients };
+			}
+
+			await catalog.ensureSlugFree(prepared.slug);
+			const created = await store.createRecipe(prepared.slug, prepared.recipe);
+			const archived = await setArchived(item, true).catch((error) => {
+				throw renameIncomplete("recipe", created.path, slug, error);
+			});
+			return {
+				slug: prepared.slug,
+				path: created.path,
+				recipe: created.record,
+				archived,
+				changes,
+				...prepared.nutrients,
+			};
+		},
+
+		async archive(slug) {
+			const item = await findOfKind(catalog, slug, "recipe");
+			if (isArchived(item)) {
+				throw new NomnomError(`'${slug}' is already archived`);
+			}
+			return setArchived(item, true);
+		},
+
+		async unarchive(slug) {
+			const item = await findOfKind(catalog, slug, "recipe");
+			if (!isArchived(item)) {
+				throw new NomnomError(`'${slug}' is not archived`);
+			}
+			return setArchived(item, false);
 		},
 	};
 }

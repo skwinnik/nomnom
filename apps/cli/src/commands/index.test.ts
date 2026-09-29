@@ -19,7 +19,7 @@ test("every option other than a nutrient is a reserved built-in option name", ()
 	}
 });
 
-test("nomnom food --help lists add, list and show", async () => {
+test("nomnom food --help lists every food command", async () => {
 	const io = createCapturedIo();
 
 	const code = await runCli({
@@ -31,9 +31,40 @@ test("nomnom food --help lists add, list and show", async () => {
 	});
 
 	expect(code).toBe(0);
-	expect(io.out).toContain("food add ");
-	expect(io.out).toContain("food list ");
-	expect(io.out).toContain("food show ");
+	for (const name of [
+		"add",
+		"list",
+		"show",
+		"update",
+		"archive",
+		"unarchive",
+	]) {
+		expect(io.out).toContain(`food ${name} `);
+	}
+});
+
+test("nomnom recipe --help lists every recipe command", async () => {
+	const io = createCapturedIo();
+
+	const code = await runCli({
+		argv: ["recipe", "--help"],
+		commands,
+		services: {} as Services,
+		io,
+		resolveContext: () => defaultContext,
+	});
+
+	expect(code).toBe(0);
+	for (const name of [
+		"add",
+		"list",
+		"show",
+		"update",
+		"archive",
+		"unarchive",
+	]) {
+		expect(io.out).toContain(`recipe ${name} `);
+	}
 });
 
 test("nomnom --help lists search and the recipe commands", async () => {

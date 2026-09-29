@@ -135,6 +135,47 @@ export function createCatalog(deps: { store: VersionedStore }): Catalog {
 	};
 }
 
+/**
+ * The item with this slug, which must be of `kind`. Throws `NomnomError` when
+ * it is the other kind or neither.
+ */
+export async function findOfKind<K extends ItemKind>(
+	catalog: Catalog,
+	slug: string,
+	kind: K,
+): Promise<Extract<CatalogItem, { kind: K }>> {
+	const item = await catalog.find(slug);
+	if (!item) throw new NomnomError(`'${slug}' is neither a food nor a recipe`);
+	if (item.kind !== kind) {
+		throw new NomnomError(`'${slug}' is a ${item.kind}, not a ${kind}`);
+	}
+	return item as Extract<CatalogItem, { kind: K }>;
+}
+
+/** The latest version of an item. Every item has at least one. */
+export function latestOf<T>(item: { readonly versions: readonly T[] }): T {
+	const latest = item.versions.at(-1);
+	if (latest === undefined) throw new Error("An item without versions");
+	return latest;
+}
+
+/**
+ * The error of a rename whose new file was created but whose old item could
+ * not be archived, naming both and the fix.
+ */
+export function renameIncomplete(
+	kind: ItemKind,
+	createdPath: string,
+	oldSlug: string,
+	error: unknown,
+): NomnomError {
+	const reason = error instanceof Error ? error.message : String(error);
+	return new NomnomError(
+		`Created ${createdPath}, but archiving '${oldSlug}' failed: ${reason}. Run 'nomnom ${kind} archive ${oldSlug}' to archive it`,
+		error instanceof NomnomError ? error.problems : [],
+	);
+}
+
 /** Summarises an item by its latest version, as lists and search print it. */
 export function summarise(item: CatalogItem): ItemSummary {
 	const latest = item.versions.at(-1);

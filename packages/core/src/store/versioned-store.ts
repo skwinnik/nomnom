@@ -14,13 +14,17 @@ import type {
 } from "./records";
 import { serialiseFood, serialiseRecipe } from "./write";
 
-export interface Created<T> {
-	/** The path of the created file. */
+export interface Written<T> {
+	/** The path of the written file. */
 	path: string;
 	record: T;
 }
 
-/** Reads and creates the versioned YAML files of foods and recipes. */
+/** The fields of a version to append; the store numbers and timestamps it. */
+export type AppendedFood = NewFoodVersion & { readonly archived?: boolean };
+export type AppendedRecipe = NewRecipeVersion & { readonly archived?: boolean };
+
+/** Reads, creates and extends the versioned YAML files of foods and recipes. */
 export interface VersionedStore {
 	/**
 	 * The slug of every `*.yaml` file in `foods/`, in code point order. Other
@@ -34,12 +38,23 @@ export interface VersionedStore {
 	/** Every version of a recipe, or `undefined` when it has no file. */
 	readRecipe(slug: string): Promise<RecipeVersion[] | undefined>;
 	/** Writes a new food file holding version 1. Never overwrites a file. */
-	createFood(slug: string, food: NewFoodVersion): Promise<Created<FoodVersion>>;
+	createFood(slug: string, food: NewFoodVersion): Promise<Written<FoodVersion>>;
 	/** Writes a new recipe file holding version 1. Never overwrites a file. */
 	createRecipe(
 		slug: string,
 		recipe: NewRecipeVersion,
-	): Promise<Created<RecipeVersion>>;
+	): Promise<Written<RecipeVersion>>;
+	/**
+	 * Adds a version after the latest one in an existing food file, numbered by
+	 * the file. The existing text is kept byte for byte. Throws `NomnomError`
+	 * when the file is missing or invalid, without writing.
+	 */
+	appendFood(slug: string, food: AppendedFood): Promise<Written<FoodVersion>>;
+	/** Adds a version to an existing recipe file, as for `appendFood`. */
+	appendRecipe(
+		slug: string,
+		recipe: AppendedRecipe,
+	): Promise<Written<RecipeVersion>>;
 }
 
 export function createVersionedStore(deps: {
@@ -82,7 +97,7 @@ export function createVersionedStore(deps: {
 		path: string,
 		record: T,
 		serialise: (record: T) => string,
-	): Promise<Created<T>> => {
+	): Promise<Written<T>> => {
 		try {
 			await fs.createExclusive(path, serialise(record));
 		} catch (error) {
@@ -91,6 +106,33 @@ export function createVersionedStore(deps: {
 			}
 			throw error;
 		}
+		return { path, record };
+	};
+
+	const append = async <T extends { version: number }>(
+		kind: string,
+		slug: string,
+		path: string,
+		fields: Omit<T, "version" | "created" | "archived"> & {
+			readonly archived?: boolean;
+		},
+		parse: (text: string, file: string) => T[],
+		serialise: (record: T) => string,
+	): Promise<Written<T>> => {
+		const text = await fs.readText(path);
+		if (text === undefined) {
+			throw new NomnomError(`There is no ${kind} '${slug}': ${path}`);
+		}
+		const versions = parse(text, path);
+		// Built field by field so the caller can't choose the version.
+		const record = {
+			...fields,
+			version: versions.length + 1,
+			created: localTimestamp(clock.now()),
+			archived: fields.archived ?? false,
+		} as unknown as T;
+		const separator = text.endsWith("\n") ? "" : "\n";
+		await fs.replaceAtomic(path, `${text}${separator}${serialise(record)}`);
 		return { path, record };
 	};
 
@@ -112,6 +154,24 @@ export function createVersionedStore(deps: {
 				slug,
 				paths.recipe(slug),
 				{ ...first(), ...recipe },
+				serialiseRecipe,
+			),
+		appendFood: (slug, food) =>
+			append(
+				"food",
+				slug,
+				paths.food(slug),
+				food,
+				parseFoodFile,
+				serialiseFood,
+			),
+		appendRecipe: (slug, recipe) =>
+			append(
+				"recipe",
+				slug,
+				paths.recipe(slug),
+				recipe,
+				parseRecipeFile,
 				serialiseRecipe,
 			),
 	};

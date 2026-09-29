@@ -8,7 +8,7 @@ import type {
 	NewRecipeVersion,
 	RecipeVersion,
 } from "../records";
-import type { Created, VersionedStore } from "../versioned-store";
+import type { VersionedStore, Written } from "../versioned-store";
 
 const paths = dataPaths("/data");
 const created = "2026-09-01T08:00:00+03:00";
@@ -35,10 +35,31 @@ export function createFakeStore(
 		slug: string,
 		path: string,
 		record: T,
-	): Created<T> => {
+	): Written<T> => {
 		if (map.has(slug))
 			throw new NomnomError(`'${slug}' already exists: ${path}`);
 		map.set(slug, [record]);
+		return { path, record };
+	};
+	const append = <T extends { version: number }>(
+		map: Map<string, T[]>,
+		kind: string,
+		slug: string,
+		path: string,
+		fields: Omit<T, "version" | "created" | "archived"> & {
+			archived?: boolean;
+		},
+	): Written<T> => {
+		const versions = map.get(slug);
+		if (!versions)
+			throw new NomnomError(`There is no ${kind} '${slug}': ${path}`);
+		const record = {
+			...fields,
+			version: versions.length + 1,
+			created,
+			archived: fields.archived ?? false,
+		} as unknown as T;
+		versions.push(record);
 		return { path, record };
 	};
 	return {
@@ -62,6 +83,10 @@ export function createFakeStore(
 				created,
 				archived: false,
 			}),
+		appendFood: async (slug, food) =>
+			append(foods, "food", slug, paths.food(slug), food),
+		appendRecipe: async (slug, recipe) =>
+			append(recipes, "recipe", slug, paths.recipe(slug), recipe),
 	};
 }
 

@@ -2,17 +2,21 @@ import type {
 	DayLogService,
 	FoodAdded,
 	FoodAddInput,
+	FoodArchived,
 	FoodService,
 	FoodShowInput,
 	FoodShown,
+	FoodUpdated,
 	ItemSummary,
 	Logged,
 	LogInput,
 	NomnomError,
 	RecipeAdded,
 	RecipeAddInput,
+	RecipeArchived,
 	RecipeService,
 	RecipeShown,
+	RecipeUpdated,
 	Report,
 	ReportInput,
 	ReportService,
@@ -24,6 +28,13 @@ export interface Recorded<I> {
 	readonly calls: I[];
 }
 
+/** The calls of `update`, `archive` and `unarchive`, in order. */
+export interface RecordedVersions<I> {
+	readonly updateCalls: { slug: string; input: I }[];
+	/** `archive <slug>` or `unarchive <slug>` each. */
+	readonly archiveCalls: string[];
+}
+
 /**
  * A food service that records its inputs and returns the configured results,
  * or throws `error` from every method.
@@ -33,14 +44,36 @@ export function createFoodServiceMock(
 		result?: FoodAdded;
 		list?: ItemSummary[];
 		shown?: FoodShown;
+		updated?: FoodUpdated;
+		archived?: FoodArchived;
 		error?: NomnomError;
 	} = {},
-): FoodService & Recorded<FoodAddInput> & { showCalls: FoodShowInput[] } {
+): FoodService &
+	Recorded<FoodAddInput> &
+	RecordedVersions<FoodAddInput> & { showCalls: FoodShowInput[] } {
 	const calls: FoodAddInput[] = [];
 	const showCalls: FoodShowInput[] = [];
+	const updateCalls: { slug: string; input: FoodAddInput }[] = [];
+	const archiveCalls: string[] = [];
+	const setArchived = async (action: string, slug: string) => {
+		archiveCalls.push(`${action} ${slug}`);
+		if (outcome.error) throw outcome.error;
+		if (!outcome.archived) throw new Error("no archived result configured");
+		return outcome.archived;
+	};
 	return {
 		calls,
 		showCalls,
+		updateCalls,
+		archiveCalls,
+		async update(slug, input) {
+			updateCalls.push({ slug, input });
+			if (outcome.error) throw outcome.error;
+			if (!outcome.updated) throw new Error("no update result configured");
+			return outcome.updated;
+		},
+		archive: (slug) => setArchived("archive", slug),
+		unarchive: (slug) => setArchived("unarchive", slug),
 		async add(input) {
 			calls.push(input);
 			if (outcome.error) throw outcome.error;
@@ -86,14 +119,36 @@ export function createRecipeServiceMock(
 		result?: RecipeAdded;
 		list?: ItemSummary[];
 		shown?: RecipeShown;
+		updated?: RecipeUpdated;
+		archived?: RecipeArchived;
 		error?: NomnomError;
 	} = {},
-): RecipeService & Recorded<RecipeAddInput> & { showCalls: string[] } {
+): RecipeService &
+	Recorded<RecipeAddInput> &
+	RecordedVersions<RecipeAddInput> & { showCalls: string[] } {
 	const calls: RecipeAddInput[] = [];
 	const showCalls: string[] = [];
+	const updateCalls: { slug: string; input: RecipeAddInput }[] = [];
+	const archiveCalls: string[] = [];
+	const setArchived = async (action: string, slug: string) => {
+		archiveCalls.push(`${action} ${slug}`);
+		if (outcome.error) throw outcome.error;
+		if (!outcome.archived) throw new Error("no archived result configured");
+		return outcome.archived;
+	};
 	return {
 		calls,
 		showCalls,
+		updateCalls,
+		archiveCalls,
+		async update(slug, input) {
+			updateCalls.push({ slug, input });
+			if (outcome.error) throw outcome.error;
+			if (!outcome.updated) throw new Error("no update result configured");
+			return outcome.updated;
+		},
+		archive: (slug) => setArchived("archive", slug),
+		unarchive: (slug) => setArchived("unarchive", slug),
 		async add(input) {
 			calls.push(input);
 			if (outcome.error) throw outcome.error;
