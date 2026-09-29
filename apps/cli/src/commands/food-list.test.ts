@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { NomnomError } from "@nomnom/core";
 import { createCapturedIo } from "../__mocks__/io";
 import { createFoodServiceMock } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { foodList } from "./food-list";
 
@@ -12,6 +13,7 @@ async function run(foods = createFoodServiceMock(), args: string[] = []) {
 		commands: [foodList],
 		services: { foods },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => {
 			throw new Error("food list does not need the context");
 		},

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { BUILT_IN_OPTION_NAMES, type Services } from "@nomnom/core";
 import { defaultContext } from "../__mocks__/context";
 import { createCapturedIo } from "../__mocks__/io";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { commands } from ".";
 
@@ -27,6 +28,7 @@ test("nomnom food --help lists every food command", async () => {
 		commands,
 		services: {} as Services,
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => defaultContext,
 	});
 
@@ -51,6 +53,7 @@ test("nomnom recipe --help lists every recipe command", async () => {
 		commands,
 		services: {} as Services,
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => defaultContext,
 	});
 
@@ -75,10 +78,29 @@ test("nomnom --help lists search and the recipe commands", async () => {
 		commands,
 		services: {} as Services,
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => defaultContext,
 	});
 
 	for (const name of ["search ", "recipe list ", "recipe show "]) {
 		expect(io.out).toContain(name);
 	}
+});
+
+test("exactly the commands that write declare it", () => {
+	const writing = commands
+		.filter((command) => command.writes)
+		.map((command) => command.name.join(" "));
+
+	expect(writing.sort()).toEqual([
+		"food add",
+		"food archive",
+		"food unarchive",
+		"food update",
+		"log",
+		"recipe add",
+		"recipe archive",
+		"recipe unarchive",
+		"recipe update",
+	]);
 });

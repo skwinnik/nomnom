@@ -25,6 +25,11 @@ export {
 	FileExistsError,
 	type FileSystem,
 } from "./fs/file-system";
+export {
+	createStagedFileSystem,
+	type StagedFileSystem,
+	type StagedWrite,
+} from "./fs/staged-file-system";
 export type { Nutrients, Nutrition } from "./nutrition/nutrition";
 export type {
 	AllowedUnit,

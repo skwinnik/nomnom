@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { NomnomError, type RecipeArchived } from "@nomnom/core";
 import { createCapturedIo } from "../__mocks__/io";
 import { createRecipeServiceMock } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { recipeArchive } from "./recipe-archive";
 import { recipeUnarchive } from "./recipe-unarchive";
@@ -30,6 +31,7 @@ async function run(
 		commands: [recipeArchive, recipeUnarchive],
 		services: { recipes },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => {
 			throw new Error("archiving does not need the context");
 		},
@@ -70,6 +72,32 @@ describe("recipe archive and unarchive", () => {
 			code: 1,
 			out: "",
 			err: "error: 'apple' is a food, not a recipe\n",
+		});
+	});
+
+	test("a dry run prints archive and unarchive in the conditional", async () => {
+		const archive = await run([
+			"recipe",
+			"archive",
+			"chicken-soup",
+			"--dry-run",
+		]);
+		const unarchive = await run([
+			"recipe",
+			"unarchive",
+			"chicken-soup",
+			"--dry-run",
+		]);
+
+		expect(archive).toMatchObject({
+			code: 0,
+			out: "Would archive /data/recipes/chicken-soup.yaml (version 2)\n\nDry run: no files were changed.\n",
+			calls: ["archive chicken-soup"],
+		});
+		expect(unarchive).toMatchObject({
+			code: 0,
+			out: "Would unarchive /data/recipes/chicken-soup.yaml (version 2)\n\nDry run: no files were changed.\n",
+			calls: ["unarchive chicken-soup"],
 		});
 	});
 });

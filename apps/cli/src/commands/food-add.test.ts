@@ -3,6 +3,7 @@ import { NomnomError } from "@nomnom/core";
 import { defaultContext } from "../__mocks__/context";
 import { createCapturedIo } from "../__mocks__/io";
 import { createFoodServiceMock } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { foodAdd } from "./food-add";
 
@@ -13,6 +14,7 @@ async function run(args: string[], foods = createFoodServiceMock()) {
 		commands: [foodAdd],
 		services: { foods },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => defaultContext,
 	});
 	return { code, out: io.out, err: io.err, calls: foods.calls };
@@ -183,5 +185,19 @@ describe("food add", () => {
 		expect(result.out).toContain("--units <name=amount>");
 		expect(result.out).toContain("(repeatable)");
 		expect(result.out).toContain("(default: 100)");
+	});
+
+	test("a dry run makes the same call and prints the path in the conditional", async () => {
+		const args = ["--name", "Rice", "--base-unit", "g", "--kcal", "360"];
+
+		const real = await run(args);
+		const dry = await run([...args, "--dry-run"]);
+
+		expect(real.out).toBe("Created /data/foods/apple.yaml\n");
+		expect(dry).toMatchObject({
+			code: 0,
+			out: "Would create /data/foods/apple.yaml\n\nDry run: no files were changed.\n",
+			calls: real.calls,
+		});
 	});
 });

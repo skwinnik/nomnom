@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createCapturedIo } from "../__mocks__/io";
 import { createRecipeServiceMock } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { recipeList } from "./recipe-list";
 
@@ -11,6 +12,7 @@ async function run(recipes = createRecipeServiceMock()) {
 		commands: [recipeList],
 		services: { recipes },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => {
 			throw new Error("recipe list does not need the context");
 		},

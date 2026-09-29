@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { NomnomError } from "@nomnom/core";
 import { createCapturedIo } from "../__mocks__/io";
 import { createFoodServiceMock, foodAdded } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { foodArchive } from "./food-archive";
 import { foodUnarchive } from "./food-unarchive";
@@ -21,6 +22,7 @@ async function run(
 		commands: [foodArchive, foodUnarchive],
 		services: { foods },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => {
 			throw new Error("archiving does not need the context");
 		},
@@ -69,6 +71,22 @@ describe("food archive and unarchive", () => {
 			code: 1,
 			out: "",
 			err: "error: 'apple' is already archived\n",
+		});
+	});
+
+	test("a dry run prints archive and unarchive in the conditional", async () => {
+		const archive = await run(["food", "archive", "apple", "--dry-run"]);
+		const unarchive = await run(["food", "unarchive", "apple", "--dry-run"]);
+
+		expect(archive).toMatchObject({
+			code: 0,
+			out: "Would archive /data/foods/apple.yaml (version 3)\n\nDry run: no files were changed.\n",
+			calls: ["archive apple"],
+		});
+		expect(unarchive).toMatchObject({
+			code: 0,
+			out: "Would unarchive /data/foods/apple.yaml (version 3)\n\nDry run: no files were changed.\n",
+			calls: ["unarchive apple"],
 		});
 	});
 });

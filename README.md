@@ -23,7 +23,7 @@ nomnom tracks calories and other nutrients. All data is plain text that you can 
 Data lives in `$NOMNOM_DIR`, or in `~/.nomnom` when `NOMNOM_DIR` is unset or empty:
 
 ```
-config.yaml            nutrient catalog and meals (created with defaults on first run)
+config.yaml            nutrient catalog and meals (created with defaults by the first successful command)
 foods/<slug>.yaml      one file per food, every version in it
 recipes/<slug>.yaml    one file per recipe, every version in it
 logs/<yyyy>/<yyyy-mm-dd>.nom   one file per day
@@ -76,6 +76,26 @@ nomnom report 2026-09-23 2026-09-29 --json
 ```
 
 `food add` and `recipe add` print the path of the new file; `recipe add` also prints its nutrients per serving and, with a yield, per 100 base units. `log` prints the line it added. `report` calculates totals from the day files; the average leaves out today, which may not be over. It fails, printing nothing on standard output, when any day in the range has errors, and lists every one with its file and line.
+
+### Dry runs
+
+Every command that writes (`food add|update|archive|unarchive`, `recipe add|update|archive|unarchive` and `log`) accepts `--dry-run`. It runs every check of a real run and prints its usual output with `Would create`, `Would update`, `Would archive` or `Would unarchive`, then each file it would write, and changes nothing:
+
+```
+$ nomnom log breakfast apple 150 g --dry-run
+apple@2 150 g
+
+/home/me/.nomnom/logs/2026/2026-09-30.nom
+  oats@2 60 g
+  milk@1 200 ml
++ apple@2 150 g
+
+  [lunch]
+
+Dry run: no files were changed.
+```
+
+A new file is shown in full, marked `(new file)`; for an existing file, the added lines start with `+ ` and two unchanged lines are shown on each side. A command writes its files only once it has succeeded: a command that fails, and `--help`, change nothing.
 
 ### Looking up foods and recipes
 

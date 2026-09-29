@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -41,6 +41,22 @@ export async function withSandbox(
 	} finally {
 		await rm(dir, { recursive: true, force: true });
 	}
+}
+
+/** Every path under a directory, with the bytes of each file, or `missing`. */
+export type Tree = Record<string, Uint8Array | "directory"> | "missing";
+
+export async function snapshotTree(dir: string): Promise<Tree> {
+	const found = await stat(dir).catch(() => undefined);
+	if (!found) return "missing";
+	const tree: Record<string, Uint8Array | "directory"> = {};
+	for (const path of (await readdir(dir, { recursive: true })).sort()) {
+		const full = join(dir, path);
+		tree[path] = (await stat(full)).isDirectory()
+			? "directory"
+			: new Uint8Array(await readFile(full));
+	}
+	return tree;
 }
 
 async function spawnNomnom(

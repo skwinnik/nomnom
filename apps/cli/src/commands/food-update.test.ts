@@ -3,6 +3,7 @@ import { type FoodUpdated, NomnomError } from "@nomnom/core";
 import { defaultContext } from "../__mocks__/context";
 import { createCapturedIo } from "../__mocks__/io";
 import { createFoodServiceMock, foodAdded } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { foodAdd } from "./food-add";
 import { foodUpdate } from "./food-update";
@@ -29,6 +30,7 @@ async function run(argv: string[], foods = createFoodServiceMock({ updated })) {
 		commands: [foodAdd, foodUpdate],
 		services: { foods },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => defaultContext,
 	});
 	return { code, out: io.out, err: io.err, calls: foods.updateCalls };
@@ -191,5 +193,55 @@ describe("food update", () => {
 		expect(update.out).toContain("Usage: nomnom food update <slug> [options]");
 		expect(options(update.out)).toBe(options(add.out));
 		expect(options(update.out)).toContain("--kcal <number>");
+	});
+
+	test("a dry run prints the update and the rename in the conditional", async () => {
+		const args = [
+			"food",
+			"update",
+			"apple",
+			"--name",
+			"Apple",
+			"--base-unit",
+			"g",
+			"--kcal",
+			"55",
+		];
+		const renamed: FoodUpdated = {
+			slug: "green-apple",
+			path: "/data/foods/green-apple.yaml",
+			food: { ...foodAdded().food, name: "Green Apple" },
+			archived: {
+				...foodAdded(),
+				food: { ...foodAdded().food, version: 3, archived: true },
+			},
+			changes: [],
+		};
+
+		const update = await run([...args, "--dry-run"]);
+		const rename = await run(
+			[...args, "--dry-run"],
+			createFoodServiceMock({ updated: renamed }),
+		);
+
+		expect(update.out).toBe(
+			[
+				"Would update /data/foods/apple.yaml (version 3)",
+				"  kcal: 52 -> 55",
+				"  fiber: 2.4 -> (none)",
+				"",
+				"Dry run: no files were changed.",
+				"",
+			].join("\n"),
+		);
+		expect(rename.out).toBe(
+			[
+				"Would create /data/foods/green-apple.yaml",
+				"Would archive /data/foods/apple.yaml (version 3)",
+				"",
+				"Dry run: no files were changed.",
+				"",
+			].join("\n"),
+		);
 	});
 });

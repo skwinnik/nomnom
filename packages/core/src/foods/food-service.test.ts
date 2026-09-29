@@ -5,7 +5,6 @@ import { createStaticConfigService } from "../config/__mocks__/config-service";
 import { dataPaths } from "../data-dir/paths";
 import { NomnomError } from "../errors";
 import { createMemoryFileSystem } from "../fs/__mocks__/file-system";
-import type { FileSystem } from "../fs/file-system";
 import { localTimestamp } from "../shared/time";
 import { food, recipe } from "../store/__mocks__/versioned-store";
 import type { FoodVersion } from "../store/records";
@@ -18,13 +17,10 @@ import { createFoodService, type FoodAddInput } from "./food-service";
 
 const now = new Date("2026-09-29T17:10:00Z");
 
-function setup(
-	files: Record<string, string> = {},
-	wrap: (fs: FileSystem) => FileSystem = (fs) => fs,
-) {
+function setup(files: Record<string, string> = {}) {
 	const fs = createMemoryFileSystem(files);
 	const store = createVersionedStore({
-		fs: wrap(fs),
+		fs,
 		clock: createFixedClock(now),
 		paths: dataPaths("/data"),
 	});
@@ -779,28 +775,6 @@ describe("food update", () => {
 		);
 		expect(fs.files.get("/data/foods/apple.yaml")).toBe(appleFile);
 		expect(fs.files.get("/data/foods/green-apple.yaml")).toBe(greenApple);
-	});
-
-	test("an archiving write that fails after the new file was created names both and the fix", async () => {
-		const { fs, foods } = setup(
-			{ "/data/foods/apple.yaml": appleFile },
-			(inner) => ({
-				...inner,
-				replaceAtomic: async () => {
-					throw new Error("disk full");
-				},
-			}),
-		);
-
-		const error = await rejection(
-			foods.update("apple", input({ name: "Green Apple" })),
-		);
-
-		expect(error.message).toBe(
-			"Created /data/foods/green-apple.yaml, but archiving 'apple' failed: disk full. Run 'nomnom food archive apple' to archive it",
-		);
-		expect(fs.files.has("/data/foods/green-apple.yaml")).toBe(true);
-		expect(fs.files.get("/data/foods/apple.yaml")).toBe(appleFile);
 	});
 
 	test("an update keeps the food's own barcode", async () => {

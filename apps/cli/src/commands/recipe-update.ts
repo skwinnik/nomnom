@@ -14,9 +14,10 @@ export const recipeUpdate = defineCommand({
 		},
 	],
 	options: recipeOptions,
+	writes: true,
 	run: async (
 		{ values, positionals },
-		{ services, io }: CommandEnv<Pick<Services, "recipes">>,
+		{ services, io, dryRun }: CommandEnv<Pick<Services, "recipes">>,
 	) => {
 		const [slug = ""] = positionals;
 		const updated = await services.recipes.update(slug, recipeInput(values));
@@ -28,6 +29,7 @@ export const recipeUpdate = defineCommand({
 					path: updated.archived.path,
 					version: updated.archived.recipe.version,
 				},
+				dryRun,
 			) + formatChanges(updated.changes);
 		io.stdout([header, ...formatRecipeNutrients(updated)].join("\n"));
 	},

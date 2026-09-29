@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { NomnomError, type RecipeUpdated } from "@nomnom/core";
 import { createCapturedIo } from "../__mocks__/io";
 import { createRecipeServiceMock } from "../__mocks__/services";
+import { createWritesMock } from "../__mocks__/writes";
 import { runCli } from "../runner";
 import { recipeAdd } from "./recipe-add";
 import { recipeUpdate } from "./recipe-update";
@@ -54,6 +55,7 @@ async function run(
 		commands: [recipeAdd, recipeUpdate],
 		services: { recipes },
 		io,
+		writes: createWritesMock(),
 		resolveContext: () => {
 			throw new Error("recipe update does not need the context");
 		},
@@ -209,5 +211,29 @@ describe("recipe update", () => {
 		);
 		expect(options(update.out)).toBe(options(add.out));
 		expect(options(update.out)).toContain("--ingredient <ref=amount [unit]>");
+	});
+
+	test("a dry run prints the update in the conditional, the changes and the nutrients", async () => {
+		const args = [
+			"recipe",
+			"update",
+			"chicken-soup",
+			"--name",
+			"Chicken Soup",
+			"--ingredient",
+			"carrot=2 medium carrot",
+		];
+
+		const real = await run(args);
+		const dry = await run([...args, "--dry-run"]);
+
+		expect(dry.code).toBe(0);
+		expect(dry.out).toBe(
+			`${real.out.replace("Updated", "Would update")}\nDry run: no files were changed.\n`,
+		);
+		expect(dry.out).toStartWith(
+			"Would update /data/recipes/chicken-soup.yaml (version 2)\n  ingredients:",
+		);
+		expect(dry.out).toContain("Per serving:");
 	});
 });
