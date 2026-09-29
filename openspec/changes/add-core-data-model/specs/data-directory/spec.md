@@ -53,15 +53,15 @@ When `config.yaml` does not exist, the system SHALL create it with a default con
 - **THEN** every command fails with an error explaining that `name` is reserved
 
 ### Requirement: Missing nutrient values count as zero
-In food records and inline log entries, a nutrient that is absent SHALL count as 0 in every calculation, and the system SHALL NOT write zero values for nutrients that were not given. Nutrient values stored under an id that is no longer in the catalog SHALL be ignored in calculations and preserved in the file. Calculated output, such as a day's totals line, is not a record and SHALL list every catalog nutrient, zeros included.
+In food records and inline log entries, a nutrient that is absent SHALL count as 0 in every calculation, and the system SHALL NOT write zero values for nutrients that were not given. Nutrient values stored under an id that is no longer in the catalog SHALL be ignored in calculations and preserved in the file. Calculated output, such as the nutrients printed by `recipe add`, is not a record and SHALL list every catalog nutrient, zeros included.
 
 #### Scenario: Nutrient added to the catalog later
 - **WHEN** `fiber` is added to the catalog after a food was saved without fiber
 - **THEN** that food counts as 0 fiber and its file is not rewritten
 
-#### Scenario: Zero in calculated totals
-- **WHEN** a day's entries contain no fiber and its totals line is written
-- **THEN** the totals line includes `fiber=0`
+#### Scenario: Zero in calculated output
+- **WHEN** a recipe's ingredients contain no fiber and `recipe add` prints its nutrients
+- **THEN** the printed nutrients include fiber with a value of 0
 
 ### Requirement: Meals
 `config.yaml` SHALL define a `meals` list of meal ids. A meal id SHALL contain only lowercase letters, digits, `-` and `_`. Ids SHALL be unique. The list order SHALL be the order of meals in log files and displays.
