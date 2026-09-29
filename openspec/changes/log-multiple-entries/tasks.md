@@ -1,0 +1,23 @@
+## 1. Prerequisite
+
+- [ ] 1.1 Confirm `add-dry-run` is applied and archived: `openspec/specs/daily-log/spec.md` has the requirement "Dry run of log", `log` declares `writes: true`, and `bun test` passes on that base. Verify with `openspec list` (no `add-dry-run` in progress) and `openspec validate log-multiple-entries --strict`.
+
+## 2. Core parsing and insertion
+
+- [ ] 2.1 Add `parseEntryText(text)` to `packages/core/src/daylog/parse.ts` as in the design: a trimmed day-file entry line whose reference may omit the version, rejecting empty values, comments, section headers and any `#` outside an inline description, with the comment check before the other checks. Verify unit tests in `parse.test.ts`: a reference with and without a version and with and without a multi-word unit, an inline entry, `"ramen # spicy" kcal=800` accepted, `apple 1 medium apple  # at work` and `"ramen" kcal=800 # x` rejected with the comment message, `apple 0`, `apple`, `''`, `# note` and `[lunch]` rejected.
+- [ ] 2.2 Replace `insertEntry` with `insertEntries(lines, meal, entries, meals)` in `packages/core/src/daylog/insert.ts`, inserting all entries at the single-entry insert point. Verify `insert.test.ts`: the existing single-entry cases still pass through `insertEntries` with one entry; two entries after a trailing comment of the section; three entries into a new section between `[breakfast]` and `[dinner]`; several entries into a new file and at the end of a file; and the result equals inserting the same entries one at a time.
+
+## 3. Day log service
+
+- [ ] 3.1 Split `referenceLine` into string parsing plus a shared `pinReference({ ref, amount, unit? })` that resolves with `newReference: true`, fills the default unit, checks `unitFactor` and returns the standard line. Verify the existing `daylog-service.test.ts` single-entry tests pass unchanged.
+- [ ] 3.2 Add `entries` to `LogInput` and change `Logged.line` to `lines`. Implement the form check (entries with any positional field, `inline` or nutrient value fails with the design's message). Build each `--entry` with `parseEntryText`, `pinReference` or an inline line in catalog order after `checkEntry` on the parsed content, then `parseLine` + `checkEntry` on the built line. Collect per-entry problems labelled `entry <n> '<text>': ...`, keep problems located in other files, and throw `Can't log <k> of <n> entries` (or `Can't log the entry` for one) before reading the day file. Then read once, refuse on file errors, and write once with `insertEntries`. Verify service tests: mixed references and inline entries written in order in standard form; a pinned `@1` kept; the default unit filled in; inline nutrients reordered to catalog order; a duplicate item giving two lines; two invalid entries out of three both reported, with the file unchanged (the in-memory file system's map is byte-identical); an archived item rejected per entry; an unknown nutrient in an inline `--entry` reported, not dropped; each forbidden combination rejected; file errors still refuse the write; warnings still returned.
+
+## 4. CLI
+
+- [ ] 4.1 Print problems with an empty `file` as their message alone in `reportError` (`apps/cli/src/runner/run-cli.ts`). Verify a `run-cli.test.ts` case: a `NomnomError` with one located and one unlocated problem prints `path:4: msg` and `msg` on separate lines.
+- [ ] 4.2 Declare `--entry` on `log` (string, `multiple: true`, `valueName: "line"`, with the design's description), pass `entries: values.entry ?? []`, and print every line of `logged.lines`. Update the mocked `dayLog` in `apps/cli/src/__mocks__/services.ts` to return `lines`. Verify `log.test.ts`: repeated `--entry` values reach the service in order; several returned lines print one per line; the single-entry forms still print their one line; help lists `--entry <line>` as repeatable.
+
+## 5. End to end
+
+- [ ] 5.1 Add e2e tests (for example `apps/cli/src/e2e/log.test.ts`) against a real data directory: an 8-entry breakfast mixing references and an inline entry in one call, with the day file and standard output checked line by line and other lines of a hand-written day file byte-identical; a call with two invalid entries exits 1, reports both entries by position and text on stderr, and leaves the file byte-identical; `--entry` together with a positional entry fails without writing; a `--dry-run` with two `--entry` values previews both `+` lines as one block, as in the `daily-log` scenario, and leaves the file unchanged.
+- [ ] 5.2 Run `bun test`, `bun run typecheck` and `bun run check`, and verify all pass.
