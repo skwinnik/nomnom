@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { NomnomError } from "../errors";
-import { isSlug, slugify } from "./slug";
+import { compareSlugs, isSlug, slugify, slugWords } from "./slug";
 
 describe("slugify", () => {
 	test.each([
@@ -25,6 +25,30 @@ describe("slugify", () => {
 	test("rejects a name with no letters or digits", () => {
 		expect(() => slugify("%%%")).toThrow(NomnomError);
 		expect(() => slugify("%%%", "123")).toThrow(NomnomError);
+	});
+});
+
+describe("slugWords", () => {
+	test.each([
+		["Greek Yogurt 2%", ["greek", "yogurt", "2"]],
+		["Творог 5%", ["творог", "5"]],
+		["%%", []],
+		["  --Apple!!  ", ["apple"]],
+		["", []],
+	])("%j splits into %j", (text, words) => {
+		expect(slugWords(text)).toEqual(words);
+	});
+
+	test("normalises to NFC", () => {
+		expect(slugWords("Café")).toEqual(["café"]);
+	});
+});
+
+describe("compareSlugs", () => {
+	test("orders by code point, a prefix first", () => {
+		expect(
+			["b", "a-b", "a", "Z", "я", "\u{1D400}", "ａ"].sort(compareSlugs),
+		).toEqual(["Z", "a", "a-b", "b", "я", "ａ", "\u{1D400}"]);
 	});
 });
 

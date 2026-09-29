@@ -49,12 +49,18 @@ const recipes: Record<string, RecipeVersion[]> = {
 	],
 };
 
-function setup() {
-	const files: Record<string, string> = {};
-	for (const [slug, versions] of Object.entries(foods)) {
+function setup(
+	items: {
+		foods?: Record<string, FoodVersion[]>;
+		recipes?: Record<string, RecipeVersion[]>;
+		files?: Record<string, string>;
+	} = { foods, recipes },
+) {
+	const files: Record<string, string> = { ...items.files };
+	for (const [slug, versions] of Object.entries(items.foods ?? {})) {
 		files[`/data/foods/${slug}.yaml`] = versions.map(serialiseFood).join("");
 	}
-	for (const [slug, versions] of Object.entries(recipes)) {
+	for (const [slug, versions] of Object.entries(items.recipes ?? {})) {
 		files[`/data/recipes/${slug}.yaml`] = versions
 			.map(serialiseRecipe)
 			.join("");
@@ -76,7 +82,7 @@ function setup() {
 	const add = (input: Partial<RecipeAddInput>) =>
 		service.add({ name: "Dish", ingredients: ["rice=80"], ...input });
 	const created = () => [...fs.files.keys()].filter((path) => !(path in files));
-	return { fs, add, created };
+	return { fs, add, created, service };
 }
 
 const soup: Partial<RecipeAddInput> = {
@@ -304,5 +310,226 @@ describe("recipe add", () => {
 
 		expect(error.message).toContain(message);
 		expect(created()).toEqual([]);
+	});
+});
+
+/** A valid recipe of 100 g rice. */
+function dish(fields: Parameters<typeof recipe>[0] = {}): RecipeVersion {
+	return recipe({
+		ingredients: [
+			{ kind: "food", slug: "rice", version: 1, amount: 100, unit: "g" },
+		],
+		...fields,
+	});
+}
+
+const soupV1 = recipe({
+	name: "Chicken Soup",
+	servings: 4,
+	yield: { baseUnit: "g", amount: 1000 },
+	units: { bowl: 350 },
+	ingredients: [
+		{
+			kind: "food",
+			slug: "chicken-breast",
+			version: 2,
+			amount: 300,
+			unit: "g",
+		},
+		{
+			kind: "food",
+			slug: "carrot",
+			version: 1,
+			amount: 2,
+			unit: "medium carrot",
+		},
+		{ kind: "food", slug: "water", version: 1, amount: 700, unit: "ml" },
+	],
+});
+
+function showSetup() {
+	return setup({
+		foods,
+		recipes: {
+			...recipes,
+			"chicken-soup": [soupV1, { ...soupV1, version: 2, servings: 5 }],
+			stew: [dish({ name: "Stew" }), dish({ version: 2, archived: true })],
+			a: [
+				recipe({
+					ingredients: [
+						{
+							kind: "recipe",
+							slug: "b",
+							version: 1,
+							amount: 1,
+							unit: "serving",
+						},
+					],
+				}),
+			],
+			b: [
+				recipe({
+					ingredients: [
+						{
+							kind: "recipe",
+							slug: "a",
+							version: 1,
+							amount: 1,
+							unit: "serving",
+						},
+					],
+				}),
+			],
+		},
+	});
+}
+
+const kcal = (list: { id: string; value: number }[] = []) =>
+	list.find((n) => n.id === "kcal")?.value;
+
+describe("recipe list", () => {
+	test("lists non-archived recipes by their latest version, in slug order", async () => {
+		const { service } = setup({
+			recipes: {
+				pancakes: [
+					dish({ name: "Old Pancakes" }),
+					dish({ name: "Pancakes", version: 2 }),
+					dish({ name: "Pancakes", version: 3 }),
+				],
+				"chicken-soup": [dish({ name: "Chicken Soup" })],
+				stew: [dish({ name: "Stew" }), dish({ version: 2, archived: true })],
+			},
+		});
+
+		expect(await service.list()).toEqual([
+			{
+				kind: "recipe",
+				slug: "chicken-soup",
+				version: 1,
+				name: "Chicken Soup",
+			},
+			{ kind: "recipe", slug: "pancakes", version: 3, name: "Pancakes" },
+		]);
+	});
+
+	test("is empty without recipes", async () => {
+		const { service } = setup({});
+
+		expect(await service.list()).toEqual([]);
+	});
+
+	test("never reads foods", async () => {
+		const { service } = setup({
+			recipes: { soup: [dish({ name: "Soup" })] },
+			files: { "/data/foods/rice.yaml": "version: [" },
+		});
+
+		expect((await service.list()).map((item) => item.slug)).toEqual(["soup"]);
+	});
+
+	test("ignores other files and directories", async () => {
+		const { service } = setup({
+			recipes: { soup: [dish({ name: "Soup" })] },
+			files: {
+				"/data/recipes/notes.txt": "notes",
+				"/data/recipes/old/stew.yaml": "version: [",
+			},
+		});
+
+		expect((await service.list()).map((item) => item.slug)).toEqual(["soup"]);
+	});
+
+	test("a broken recipe file fails the list, naming it", async () => {
+		const { service } = setup({
+			recipes: { soup: [dish({ name: "Soup" })] },
+			files: { "/data/recipes/stew.yaml": "version: [" },
+		});
+
+		const error = await rejection(service.list());
+
+		expect(error.message).toContain("/data/recipes/stew.yaml");
+	});
+});
+
+describe("recipe show", () => {
+	test("shows the soup example with its units and nutrients", async () => {
+		const { service } = showSetup();
+
+		const shown = await service.show("chicken-soup@1");
+
+		expect(shown.slug).toBe("chicken-soup");
+		expect(shown.recipe).toEqual(soupV1);
+		expect(shown.latestVersion).toBe(2);
+		expect(shown.archived).toBe(false);
+		expect(shown.units).toEqual([
+			{ name: "g", size: 1 },
+			{ name: "serving", size: 250 },
+			{ name: "bowl", size: 350 },
+		]);
+		expect(shown.perServing.map((n) => n.id)).toEqual([
+			"kcal",
+			"protein",
+			"fat",
+			"carbs",
+			"fiber",
+		]);
+		expect(kcal(shown.perServing)).toBeCloseTo(136.255, 10);
+		expect(shown.perHundred?.unit).toBe("g");
+		expect(kcal(shown.perHundred?.nutrients)).toBeCloseTo(54.502, 10);
+	});
+
+	test("shows the latest version by default", async () => {
+		const { service } = showSetup();
+
+		const shown = await service.show("chicken-soup");
+
+		expect(shown.recipe.version).toBe(2);
+		expect(shown.latestVersion).toBe(2);
+		expect(kcal(shown.perServing)).toBeCloseTo(545.02 / 5, 10);
+	});
+
+	test("a recipe without a yield allows only serving and has no per-100 values", async () => {
+		const { service } = showSetup();
+
+		const shown = await service.show("pancake-batter");
+
+		expect(shown.units).toEqual([{ name: "serving" }]);
+		expect(shown.perHundred).toBeUndefined();
+		// 100 g rice in two servings.
+		expect(kcal(shown.perServing)).toBe(180);
+	});
+
+	test("shows an archived recipe", async () => {
+		const { service } = showSetup();
+
+		expect((await service.show("stew")).archived).toBe(true);
+		expect((await service.show("stew@1")).archived).toBe(true);
+	});
+
+	test("a food's slug is not found, like an unknown slug", async () => {
+		const { service } = showSetup();
+
+		expect((await rejection(service.show("rice"))).message).toBe(
+			"There is no recipe 'rice'",
+		);
+		expect((await rejection(service.show("unicorn"))).message).toBe(
+			"There is no recipe 'unicorn'",
+		);
+	});
+
+	test("rejects a version that does not exist, naming it", async () => {
+		const { service } = showSetup();
+
+		expect((await rejection(service.show("chicken-soup@7"))).message).toBe(
+			"'chicken-soup@7' does not exist: recipe 'chicken-soup' has versions 1 to 2",
+		);
+	});
+
+	test("fails when the nutrients can't be calculated, naming the cycle", async () => {
+		const { service } = showSetup();
+
+		expect((await rejection(service.show("a"))).message).toBe(
+			"Recipes reference each other in a cycle: a@1 -> b@1 -> a@1",
+		);
 	});
 });

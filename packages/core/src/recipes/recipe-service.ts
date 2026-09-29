@@ -1,4 +1,11 @@
-import type { Catalog } from "../catalog/catalog";
+import {
+	type Catalog,
+	type CatalogItem,
+	type ItemSummary,
+	isArchived,
+	pickVersion,
+	summarise,
+} from "../catalog/catalog";
 import { measureOf } from "../catalog/units";
 import type { Nutrient } from "../config/config";
 import type { ConfigService } from "../config/config-service";
@@ -9,7 +16,8 @@ import {
 	unitFactor,
 } from "../nutrition/nutrition";
 import { parseNumber } from "../shared/numbers";
-import { parseAmountRef } from "../shared/references";
+import { settleInOrder } from "../shared/promises";
+import { parseAmountRef, parseItemRef } from "../shared/references";
 import { slugify } from "../shared/slug";
 import { normaliseUnitName, parseUnits, SERVING } from "../shared/units";
 import type { Ingredient, RecipeVersion } from "../store/records";
@@ -48,13 +56,41 @@ export interface RecipeAdded {
 	perHundred?: { unit: string; nutrients: NutrientAmount[] };
 }
 
+/** A unit a recipe version allows. */
+export interface AllowedUnit {
+	name: string;
+	/** Its size in the recipe's base units; absent without a yield. */
+	size?: number;
+}
+
+export interface RecipeShown {
+	slug: string;
+	/** The shown version. */
+	recipe: RecipeVersion;
+	latestVersion: number;
+	/** Whether the recipe is archived: its latest version is. */
+	archived: boolean;
+	/** Every unit the version allows: with a yield, the base unit, `serving` and its units; otherwise `serving` alone. */
+	units: AllowedUnit[];
+	/** Every catalog nutrient, in catalog order. */
+	perServing: NutrientAmount[];
+	/** Present when the version has a yield: nutrients in 100 base units. */
+	perHundred?: { unit: string; nutrients: NutrientAmount[] };
+}
+
 export interface RecipeService {
 	/**
 	 * Validates a new recipe, pins its ingredients and calculates its nutrients,
 	 * then writes it as version 1. Writes nothing when anything fails.
 	 */
 	add(input: RecipeAddInput): Promise<RecipeAdded>;
+	/** Every non-archived recipe by its latest version, in slug order. */
+	list(): Promise<ItemSummary[]>;
+	/** One version of a recipe, `<slug>[@<version>]`, with its calculated nutrients. */
+	show(ref: string): Promise<RecipeShown>;
 }
+
+type RecipeItem = CatalogItem & { kind: "recipe" };
 
 export function createRecipeService(deps: {
 	config: ConfigService;
@@ -78,7 +114,60 @@ export function createRecipeService(deps: {
 		};
 	};
 
+	/** Every recipe, in slug order. Fails when any recipe file is invalid. */
+	const allRecipes = async (): Promise<RecipeItem[]> => {
+		const slugs = await store.recipeSlugs();
+		const versions = await settleInOrder(
+			slugs.map((slug) => store.readRecipe(slug)),
+		);
+		return slugs.flatMap((slug, i) => {
+			const found = versions[i];
+			return found ? [{ kind: "recipe" as const, slug, versions: found }] : [];
+		});
+	};
+
 	return {
+		async list() {
+			return (await allRecipes())
+				.filter((item) => !isArchived(item))
+				.map(summarise);
+		},
+
+		async show(text) {
+			const ref = parseItemRef(text);
+			const versions = await store.readRecipe(ref.slug);
+			if (!versions) throw new NomnomError(`There is no recipe '${ref.slug}'`);
+			const item: RecipeItem = { kind: "recipe", slug: ref.slug, versions };
+			const record = pickVersion(item, ref.version);
+			const version = { kind: "recipe" as const, slug: item.slug, record };
+			const { nutrients: nutrientCatalog } = await config.load();
+			const cooked = record.yield;
+			const units = [...measureOf(version).units].map(([name, size]) =>
+				cooked ? { name, size } : { name },
+			);
+			const perServing = await nutrition.amountOf(version, 1, SERVING);
+			return {
+				slug: item.slug,
+				recipe: record,
+				latestVersion: versions.length,
+				archived: isArchived(item),
+				units,
+				perServing: amounts(nutrientCatalog, perServing, 1),
+				...(cooked
+					? {
+							perHundred: {
+								unit: cooked.baseUnit,
+								nutrients: amounts(
+									nutrientCatalog,
+									await nutrition.amountOf(version, 100, cooked.baseUnit),
+									1,
+								),
+							},
+						}
+					: {}),
+			};
+		},
+
 		async add(input) {
 			const { nutrients: nutrientCatalog } = await config.load();
 			const name = input.name.trim();

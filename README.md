@@ -57,8 +57,16 @@ nomnom food add --name Apple --base-unit g --kcal 52 --protein 0.3 \
 nomnom recipe add --name 'Chicken Soup' --servings 4 --base-unit g --yield 1000 \
   --ingredient 'chicken-breast=300 g' --ingredient 'carrot@1=2 medium carrot' --units bowl=350
 
+# Look up slugs and versions to pass to `log` and `recipe add`.
+nomnom food list
+nomnom recipe list
+nomnom search chiken soop                   # fuzzy search over food and recipe names
+nomnom food show apple-4601234567890        # the latest version; apple-4601234567890@1 for another
+nomnom food show --barcode 0034000470693    # the food that has this barcode
+nomnom recipe show chicken-soup
+
 # Log a food or recipe (the rest of the words are the unit), or typed-in totals.
-nomnom log breakfast apple 1 medium sized apple
+nomnom log breakfast apple-4601234567890 1 medium sized apple
 nomnom log dinner --inline 'restaurant ramen' --kcal 800 --protein 35 --date 2026-09-29
 
 # Report a day (default: today) by meal, or a range with totals and the average per logged day.
@@ -68,6 +76,88 @@ nomnom report 2026-09-23 2026-09-29 --json
 ```
 
 `food add` and `recipe add` print the path of the new file; `recipe add` also prints its nutrients per serving and, with a yield, per 100 base units. `log` prints the line it added. `report` calculates totals from the day files; the average leaves out today, which may not be over. It fails, printing nothing on standard output, when any day in the range has errors, and lists every one with its file and line.
+
+### Looking up foods and recipes
+
+Output is plain text for people and scripts alike: the `<slug>@<version>` a command prints is exactly what `log` and `recipe add` accept, columns are separated by at least two spaces, and the name comes last.
+
+`food list` and `recipe list` print every item that is not archived, by its latest version, sorted by slug. When there is none they print `No foods` or `No recipes`.
+
+```
+$ nomnom food list
+apple-4601234567890@1          food  Apple
+carrot@1                       food  Carrot
+chicken-breast@1               food  Chicken Breast
+greek-yogurt-2-034000470693@1  food  Greek Yogurt 2%
+water@1                        food  Water
+```
+
+`food show` and `recipe show` print one version: the one given (`apple-4601234567890@1`) or the latest. Archived items are shown too, with `Archived: yes`, and an older version shows `Latest version: <n>`. `food show` only finds foods and `recipe show` only recipes. A food shows its stored values exactly as stored (`-` when not given); a recipe shows its nutrients as calculated, per serving and, with a yield, per 100 base units.
+
+```
+$ nomnom food show apple-4601234567890
+apple-4601234567890@1  food  Apple
+Created: 2026-09-29T20:10:00+03:00
+Barcodes: 4601234567890
+Per 100 g:
+  Energy          52 kcal
+  Protein        0.3 g
+  Fat              - g
+  Carbohydrates    - g
+  Fiber            - g
+Units:
+  g                   base unit
+  medium sized apple  180 g
+
+$ nomnom recipe show chicken-soup
+chicken-soup@1  recipe  Chicken Soup
+Created: 2026-09-29T20:15:00+03:00
+Servings: 4
+Yield: 1000 g
+Units:
+  g        base unit
+  serving  250 g
+  bowl     350 g
+Ingredients:
+  chicken-breast@1  300 g
+  carrot@1          2 medium carrot
+  water@1           700 ml
+Per serving:
+  Energy         136.3 kcal
+  Protein         23.3 g
+  Fat              0.0 g
+  Carbohydrates    0.0 g
+  Fiber            0.0 g
+Per 100 g:
+  Energy         54.5 kcal
+  Protein         9.3 g
+  Fat             0.0 g
+  Carbohydrates   0.0 g
+  Fiber           0.0 g
+```
+
+`food show --barcode <digits>` shows the latest version of the food that has the barcode, instead of a slug. Barcodes are stored exactly as given but compared the way Open Food Facts normalizes them: leading zeros are removed, then a code of 1 to 7 digits is padded with zeros to 8 digits and one of 9 to 12 digits to 13. So the UPC-A code `034000470693` and its EAN-13 form `0034000470693` are the same barcode. A food's barcodes are those of its latest version, and archived foods hold none. `food add` rejects a barcode that another food already has, and two barcodes in one command that are the same.
+
+```
+$ nomnom food show --barcode 0034000470693
+greek-yogurt-2-034000470693@1  food  Greek Yogurt 2%
+Created: 2026-09-29T20:10:00+03:00
+Barcodes: 034000470693
+...
+```
+
+`search <text>` searches the names of foods and recipes that are not archived, together. The query and the names are split into words like slugs are. Every query word must match a word of the name, in any order; the start of a word is enough, and typos are allowed: none for words of 1 to 3 characters, one for 4 to 7 and two for 8 or more (an edit inserts, deletes or replaces a character, or swaps two adjacent ones). Results with the fewest edits come first, then by slug. Only names are searched, not slugs or barcodes.
+
+```
+$ nomnom search chiken soop
+chicken-soup@1  recipe  Chicken Soup
+$ nomnom search yogrt
+greek-yogurt-2-034000470693@1  food  Greek Yogurt 2%
+$ nomnom search xyz
+No foods or recipes match 'xyz'
+```
+
+Commands that read every food or recipe (`food list`, `food show --barcode`, `food add`, `recipe list` and `search`) fail when any file they read is invalid, naming it. In `foods/` and `recipes/`, every `*.yaml` file must be named after a valid slug; other files and directories are ignored.
 
 ### Foods and recipes
 

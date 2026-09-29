@@ -1,6 +1,8 @@
 import { NomnomError } from "../errors";
+import { settleInOrder } from "../shared/promises";
 import type { ItemRef } from "../shared/references";
-import type { FoodVersion, RecipeVersion } from "../store/records";
+import { compareSlugs } from "../shared/slug";
+import type { FoodVersion, ItemKind, RecipeVersion } from "../store/records";
 import type { VersionedStore } from "../store/versioned-store";
 import type { ItemVersion } from "./units";
 
@@ -17,6 +19,16 @@ export type CatalogItem =
 			readonly versions: readonly RecipeVersion[];
 	  };
 
+/** One line of a list or of search results: an item by its latest version. */
+export interface ItemSummary {
+	readonly kind: ItemKind;
+	readonly slug: string;
+	/** The latest version. */
+	readonly version: number;
+	/** The name of the latest version. */
+	readonly name: string;
+}
+
 export interface ResolveOptions {
 	/**
 	 * The reference is being newly written, so an archived item is rejected.
@@ -29,6 +41,11 @@ export interface ResolveOptions {
 export interface Catalog {
 	/** The food or recipe with this slug, or `undefined` when neither exists. */
 	find(slug: string): Promise<CatalogItem | undefined>;
+	/**
+	 * Every food and recipe, in slug order. Throws `NomnomError` when any file is
+	 * invalid or a slug is both a food and a recipe.
+	 */
+	all(): Promise<CatalogItem[]>;
 	/**
 	 * A specific version, or the latest one when the reference has none. Throws
 	 * `NomnomError` for an unknown slug or version, and for an archived item
@@ -75,6 +92,16 @@ export function createCatalog(deps: { store: VersionedStore }): Catalog {
 	return {
 		find,
 
+		async all() {
+			const [foods, recipes] = await Promise.all([
+				store.foodSlugs(),
+				store.recipeSlugs(),
+			]);
+			const slugs = [...new Set([...foods, ...recipes])].sort(compareSlugs);
+			const items = await settleInOrder(slugs.map(find));
+			return items.filter((item) => item !== undefined);
+		},
+
 		async resolve(ref, options = {}) {
 			const item = await find(ref.slug);
 			if (!item) {
@@ -85,17 +112,17 @@ export function createCatalog(deps: { store: VersionedStore }): Catalog {
 					`'${ref.slug}' is archived and can't be newly referenced`,
 				);
 			}
-			const version = ref.version ?? item.versions.length;
-			if (item.kind === "food") {
-				const record = item.versions[version - 1];
-				if (record) return { kind: "food", slug: item.slug, record };
-			} else {
-				const record = item.versions[version - 1];
-				if (record) return { kind: "recipe", slug: item.slug, record };
-			}
-			throw new NomnomError(
-				`'${ref.slug}@${version}' does not exist: ${item.kind} '${ref.slug}' has ${describeVersions(item.versions.length)}`,
-			);
+			return item.kind === "food"
+				? {
+						kind: "food",
+						slug: item.slug,
+						record: pickVersion(item, ref.version),
+					}
+				: {
+						kind: "recipe",
+						slug: item.slug,
+						record: pickVersion(item, ref.version),
+					};
 		},
 
 		async ensureSlugFree(slug) {
@@ -106,6 +133,36 @@ export function createCatalog(deps: { store: VersionedStore }): Catalog {
 			);
 		},
 	};
+}
+
+/** Summarises an item by its latest version, as lists and search print it. */
+export function summarise(item: CatalogItem): ItemSummary {
+	const latest = item.versions.at(-1);
+	return {
+		kind: item.kind,
+		slug: item.slug,
+		version: item.versions.length,
+		name: latest?.name ?? "",
+	};
+}
+
+/**
+ * The given version of an item, or its latest one when none is given. Throws
+ * `NomnomError` naming the reference when the version does not exist.
+ */
+export function pickVersion<T>(
+	item: {
+		readonly kind: ItemKind;
+		readonly slug: string;
+		readonly versions: readonly T[];
+	},
+	version = item.versions.length,
+): T {
+	const record = item.versions[version - 1];
+	if (record) return record;
+	throw new NomnomError(
+		`'${item.slug}@${version}' does not exist: ${item.kind} '${item.slug}' has ${describeVersions(item.versions.length)}`,
+	);
 }
 
 function describeVersions(count: number): string {

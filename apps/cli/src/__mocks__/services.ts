@@ -3,15 +3,20 @@ import type {
 	FoodAdded,
 	FoodAddInput,
 	FoodService,
+	FoodShowInput,
+	FoodShown,
+	ItemSummary,
 	Logged,
 	LogInput,
 	NomnomError,
 	RecipeAdded,
 	RecipeAddInput,
 	RecipeService,
+	RecipeShown,
 	Report,
 	ReportInput,
 	ReportService,
+	SearchService,
 } from "@nomnom/core";
 
 export interface Recorded<I> {
@@ -19,17 +24,37 @@ export interface Recorded<I> {
 	readonly calls: I[];
 }
 
-/** A food service that records its inputs and returns `result`, or throws `error`. */
+/**
+ * A food service that records its inputs and returns the configured results,
+ * or throws `error` from every method.
+ */
 export function createFoodServiceMock(
-	outcome: { result?: FoodAdded; error?: NomnomError } = {},
-): FoodService & Recorded<FoodAddInput> {
+	outcome: {
+		result?: FoodAdded;
+		list?: ItemSummary[];
+		shown?: FoodShown;
+		error?: NomnomError;
+	} = {},
+): FoodService & Recorded<FoodAddInput> & { showCalls: FoodShowInput[] } {
 	const calls: FoodAddInput[] = [];
+	const showCalls: FoodShowInput[] = [];
 	return {
 		calls,
+		showCalls,
 		async add(input) {
 			calls.push(input);
 			if (outcome.error) throw outcome.error;
 			return outcome.result ?? foodAdded();
+		},
+		async list() {
+			if (outcome.error) throw outcome.error;
+			return outcome.list ?? [];
+		},
+		async show(input) {
+			showCalls.push(input);
+			if (outcome.error) throw outcome.error;
+			if (!outcome.shown) throw new Error("no food to show configured");
+			return outcome.shown;
 		},
 	};
 }
@@ -52,18 +77,53 @@ export function foodAdded(slug = "apple"): FoodAdded {
 	};
 }
 
-/** A recipe service that records its inputs and returns `result`, or throws `error`. */
+/**
+ * A recipe service that records its inputs and returns the configured results,
+ * or throws `error` from every method.
+ */
 export function createRecipeServiceMock(
-	outcome: { result?: RecipeAdded; error?: NomnomError } = {},
-): RecipeService & Recorded<RecipeAddInput> {
+	outcome: {
+		result?: RecipeAdded;
+		list?: ItemSummary[];
+		shown?: RecipeShown;
+		error?: NomnomError;
+	} = {},
+): RecipeService & Recorded<RecipeAddInput> & { showCalls: string[] } {
 	const calls: RecipeAddInput[] = [];
+	const showCalls: string[] = [];
 	return {
 		calls,
+		showCalls,
 		async add(input) {
 			calls.push(input);
 			if (outcome.error) throw outcome.error;
 			if (!outcome.result) throw new Error("no result configured");
 			return outcome.result;
+		},
+		async list() {
+			if (outcome.error) throw outcome.error;
+			return outcome.list ?? [];
+		},
+		async show(ref) {
+			showCalls.push(ref);
+			if (outcome.error) throw outcome.error;
+			if (!outcome.shown) throw new Error("no recipe to show configured");
+			return outcome.shown;
+		},
+	};
+}
+
+/** A search service that records its queries and returns `results`, or throws `error`. */
+export function createSearchServiceMock(
+	outcome: { results?: ItemSummary[]; error?: NomnomError } = {},
+): SearchService & Recorded<string> {
+	const calls: string[] = [];
+	return {
+		calls,
+		async search(text) {
+			calls.push(text);
+			if (outcome.error) throw outcome.error;
+			return outcome.results ?? [];
 		},
 	};
 }

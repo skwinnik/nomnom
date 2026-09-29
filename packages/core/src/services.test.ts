@@ -38,6 +38,7 @@ test("createServices wires every service", () => {
 		"foods",
 		"recipes",
 		"report",
+		"search",
 	]);
 });
 

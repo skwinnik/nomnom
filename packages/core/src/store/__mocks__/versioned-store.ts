@@ -1,5 +1,6 @@
 import { dataPaths } from "../../data-dir/paths";
 import { NomnomError } from "../../errors";
+import { compareSlugs } from "../../shared/slug";
 import { parseFoodFile, parseRecipeFile } from "../parse";
 import type {
 	FoodVersion,
@@ -43,6 +44,8 @@ export function createFakeStore(
 	return {
 		foods,
 		recipes,
+		foodSlugs: async () => [...foods.keys()].sort(compareSlugs),
+		recipeSlugs: async () => [...recipes.keys()].sort(compareSlugs),
 		readFood: async (slug) => foods.get(slug),
 		readRecipe: async (slug) => recipes.get(slug),
 		createFood: async (slug, food) =>

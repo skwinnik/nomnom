@@ -20,6 +20,10 @@ import {
 	createReportService,
 	type ReportService,
 } from "./report/report-service";
+import {
+	createSearchService,
+	type SearchService,
+} from "./search/search-service";
 import { createVersionedStore } from "./store/versioned-store";
 
 /** What services depend on. The CLI supplies real adapters and values; tests supply mocks. */
@@ -35,6 +39,7 @@ export interface Services {
 	config: ConfigService;
 	foods: FoodService;
 	recipes: RecipeService;
+	search: SearchService;
 	dayLog: DayLogService;
 	report: ReportService;
 }
@@ -52,6 +57,7 @@ export function createServices(deps: ServiceDependencies): Services {
 	const nutrition = createNutrition({ catalog, config });
 	const foods = createFoodService({ config, catalog, store });
 	const recipes = createRecipeService({ config, catalog, nutrition, store });
+	const search = createSearchService({ catalog });
 	const dayLog = createDayLogService({ fs, clock, paths, config, catalog });
 	const report = createReportService({
 		fs,
@@ -61,5 +67,5 @@ export function createServices(deps: ServiceDependencies): Services {
 		catalog,
 		nutrition,
 	});
-	return { config, foods, recipes, dayLog, report };
+	return { config, foods, recipes, search, dayLog, report };
 }

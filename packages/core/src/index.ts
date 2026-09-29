@@ -1,4 +1,4 @@
-export type { Catalog, CatalogItem } from "./catalog/catalog";
+export type { Catalog, CatalogItem, ItemSummary } from "./catalog/catalog";
 export type { Clock } from "./clock/clock";
 export { createSystemClock } from "./clock/system-clock";
 export type { Config, Nutrient } from "./config/config";
@@ -13,6 +13,9 @@ export type {
 	FoodAdded,
 	FoodAddInput,
 	FoodService,
+	FoodShowInput,
+	FoodShown,
+	StoredNutrient,
 } from "./foods/food-service";
 export { createBunFileSystem } from "./fs/bun-file-system";
 export {
@@ -22,10 +25,12 @@ export {
 } from "./fs/file-system";
 export type { Nutrients, Nutrition } from "./nutrition/nutrition";
 export type {
+	AllowedUnit,
 	NutrientAmount,
 	RecipeAdded,
 	RecipeAddInput,
 	RecipeService,
+	RecipeShown,
 } from "./recipes/recipe-service";
 export type {
 	Report,
@@ -35,6 +40,7 @@ export type {
 	ReportMeal,
 	ReportService,
 } from "./report/report-service";
+export type { SearchService } from "./search/search-service";
 export {
 	createServices,
 	type ServiceDependencies,

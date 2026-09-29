@@ -1,5 +1,6 @@
-import type { NutrientAmount, Services } from "@nomnom/core";
+import type { Services } from "@nomnom/core";
 import { type CommandEnv, defineCommand } from "../runner";
+import { formatNutrients } from "./format";
 
 export const recipeAdd = defineCommand({
 	name: ["recipe", "add"],
@@ -66,18 +67,3 @@ export const recipeAdd = defineCommand({
 		io.stdout(sections.join("\n"));
 	},
 });
-
-/** A titled table of nutrients rounded to one decimal place. */
-export function formatNutrients(
-	title: string,
-	nutrients: readonly NutrientAmount[],
-): string {
-	const rows = nutrients.map((n) => [n.name, n.value.toFixed(1), n.unit]);
-	const nameWidth = Math.max(...rows.map(([name = ""]) => name.length));
-	const valueWidth = Math.max(...rows.map(([, value = ""]) => value.length));
-	const lines = rows.map(
-		([name = "", value = "", unit = ""]) =>
-			`  ${name.padEnd(nameWidth)}  ${value.padStart(valueWidth)} ${unit}`,
-	);
-	return `${title}:\n${lines.join("\n")}\n`;
-}

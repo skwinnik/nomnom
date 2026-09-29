@@ -86,11 +86,11 @@ A command that reads a food file SHALL fail when that file is invalid, with an e
   Created: 2026-10-02T08:00:00+03:00
   Barcodes: 4601234567890
   Per 100 g:
-    Energy         52 kcal
-    Protein       0.3 g
-    Fat             - g
-    Carbohydrates  14 g
-    Fiber         2.4 g
+    Energy          52 kcal
+    Protein        0.3 g
+    Fat              - g
+    Carbohydrates   14 g
+    Fiber          2.4 g
   Units:
     g                   base unit
     medium sized apple  180 g

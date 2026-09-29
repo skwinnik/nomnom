@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import { createFixedClock } from "../clock/__mocks__/clock";
+import { dataPaths } from "../data-dir/paths";
 import { NomnomError } from "../errors";
+import { createMemoryFileSystem } from "../fs/__mocks__/file-system";
 import {
 	createFakeStore,
 	food,
 	recipe,
 } from "../store/__mocks__/versioned-store";
+import { createVersionedStore } from "../store/versioned-store";
+import { serialiseFood } from "../store/write";
 import { createCatalog, isArchived } from "./catalog";
 
 function setup() {
@@ -149,4 +154,67 @@ test("reads each item at most once per run", async () => {
 	await catalog.find("apple");
 
 	expect(reads).toBe(1);
+});
+
+describe("all", () => {
+	test("returns every food and recipe together, in slug order", async () => {
+		const { catalog } = setup();
+
+		const items = await catalog.all();
+
+		expect(items.map((item) => [item.kind, item.slug])).toEqual([
+			["food", "apple"],
+			["recipe", "pancakes"],
+			["food", "pear"],
+		]);
+	});
+
+	test("rejects a slug used in both foods/ and recipes/", async () => {
+		const store = createFakeStore({
+			foods: { apple: [food()], pancakes: [food()] },
+			recipes: { pancakes: [recipe()] },
+		});
+
+		await expect(createCatalog({ store }).all()).rejects.toThrow(
+			"'pancakes' is both a food and a recipe",
+		);
+	});
+
+	test("fails on a broken file, naming it", async () => {
+		const store = createVersionedStore({
+			fs: createMemoryFileSystem({
+				"/data/foods/apple.yaml": serialiseFood(food({ name: "Apple" })),
+				"/data/recipes/stew.yaml": "version: [",
+			}),
+			clock: createFixedClock(new Date("2026-09-29T17:10:00Z")),
+			paths: dataPaths("/data"),
+		});
+
+		const error = await createCatalog({ store })
+			.all()
+			.catch((e) => e);
+
+		expect(error).toBeInstanceOf(NomnomError);
+		expect(error.message).toContain("/data/recipes/stew.yaml");
+	});
+
+	test("loads items through the find cache", async () => {
+		const { store } = setup();
+		let reads = 0;
+		const catalog = createCatalog({
+			store: {
+				...store,
+				readFood: (slug) => {
+					reads++;
+					return store.readFood(slug);
+				},
+			},
+		});
+
+		await catalog.all();
+		await catalog.find("apple");
+
+		// Once per slug: apple, pancakes and pear.
+		expect(reads).toBe(3);
+	});
 });
