@@ -1,0 +1,12 @@
+{
+	"name": "@nomnom/cli",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"bin": {
+		"nomnom": "./src/index.ts"
+	},
+	"dependencies": {
+		"@nomnom/core": "workspace:*"
+	}
+}

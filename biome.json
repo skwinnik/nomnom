@@ -30,5 +30,306 @@
 				"organizeImports": "on"
 			}
 		}
-	}
+	},
+	"overrides": [
+		{
+			"includes": ["packages/core/src/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "error"
+					},
+					"style": {
+						"noRestrictedGlobals": {
+							"level": "error",
+							"options": {
+								"deniedGlobals": {
+									"process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"Bun": "Only adapters (packages/core/src/**/bun-*.ts) and the CLI entry point may use Bun APIs."
+								}
+							}
+						},
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"paths": {
+									"node:fs": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"node:fs/promises": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"fs": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"fs/promises": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"node:process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"bun": "Only adapters (packages/core/src/**/bun-*.ts) and the CLI entry point may use Bun APIs.",
+									"@nomnom/cli": "Core must not depend on the CLI."
+								},
+								"patterns": [
+									{
+										"group": ["**/__mocks__/**"],
+										"message": "Only tests and other mocks may import mocks."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": [
+				"packages/core/src/**/*.test.ts",
+				"packages/core/src/**/__mocks__/**"
+			],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "error"
+					},
+					"style": {
+						"noRestrictedGlobals": {
+							"level": "error",
+							"options": {
+								"deniedGlobals": {
+									"process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"Bun": "Only adapters (packages/core/src/**/bun-*.ts) and the CLI entry point may use Bun APIs."
+								}
+							}
+						},
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"paths": {
+									"node:fs": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"node:fs/promises": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"fs": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"fs/promises": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"node:process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"bun": "Only adapters (packages/core/src/**/bun-*.ts) and the CLI entry point may use Bun APIs.",
+									"@nomnom/cli": "Core must not depend on the CLI."
+								},
+								"patterns": []
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["packages/core/src/**/bun-*.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "error"
+					},
+					"style": {
+						"noRestrictedGlobals": {
+							"level": "error",
+							"options": {
+								"deniedGlobals": {
+									"process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process."
+								}
+							}
+						},
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"paths": {
+									"node:process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"@nomnom/cli": "Core must not depend on the CLI."
+								},
+								"patterns": [
+									{
+										"group": ["**/__mocks__/**"],
+										"message": "Only tests and other mocks may import mocks."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["packages/core/src/**/bun-*.test.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "error"
+					},
+					"style": {
+						"noRestrictedGlobals": {
+							"level": "error",
+							"options": {
+								"deniedGlobals": {
+									"process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process."
+								}
+							}
+						},
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"paths": {
+									"node:process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"@nomnom/cli": "Core must not depend on the CLI."
+								},
+								"patterns": []
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["apps/cli/src/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "error"
+					},
+					"style": {
+						"noRestrictedGlobals": {
+							"level": "error",
+							"options": {
+								"deniedGlobals": {
+									"process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"Bun": "Only adapters (packages/core/src/**/bun-*.ts) and the CLI entry point may use Bun APIs."
+								}
+							}
+						},
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"paths": {
+									"node:fs": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"node:fs/promises": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"fs": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"fs/promises": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"node:process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"bun": "Only adapters (packages/core/src/**/bun-*.ts) and the CLI entry point may use Bun APIs."
+								},
+								"patterns": [
+									{
+										"group": ["**/__mocks__/**"],
+										"message": "Only tests and other mocks may import mocks."
+									},
+									{
+										"group": ["**/packages/**"],
+										"message": "Import core through \"@nomnom/core\", never by relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["apps/cli/src/**/*.test.ts", "apps/cli/src/**/__mocks__/**"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "error"
+					},
+					"style": {
+						"noRestrictedGlobals": {
+							"level": "error",
+							"options": {
+								"deniedGlobals": {
+									"process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"Bun": "Only adapters (packages/core/src/**/bun-*.ts) and the CLI entry point may use Bun APIs."
+								}
+							}
+						},
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"paths": {
+									"node:fs": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"node:fs/promises": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"fs": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"fs/promises": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"node:process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"process": "Only the CLI entry point (apps/cli/src/index.ts) may touch the process.",
+									"bun": "Only adapters (packages/core/src/**/bun-*.ts) and the CLI entry point may use Bun APIs."
+								},
+								"patterns": [
+									{
+										"group": ["**/packages/**"],
+										"message": "Import core through \"@nomnom/core\", never by relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["apps/cli/src/index.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "off"
+					},
+					"style": {
+						"noRestrictedGlobals": "off",
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"paths": {
+									"node:fs": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"node:fs/promises": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"fs": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"fs/promises": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port."
+								},
+								"patterns": [
+									{
+										"group": ["**/__mocks__/**"],
+										"message": "Only tests and other mocks may import mocks."
+									},
+									{
+										"group": ["**/packages/**"],
+										"message": "Import core through \"@nomnom/core\", never by relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		},
+		{
+			"includes": ["apps/cli/src/index.test.ts"],
+			"linter": {
+				"rules": {
+					"suspicious": {
+						"noConsole": "off"
+					},
+					"style": {
+						"noRestrictedGlobals": "off",
+						"noRestrictedImports": {
+							"level": "error",
+							"options": {
+								"paths": {
+									"node:fs": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"node:fs/promises": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"fs": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port.",
+									"fs/promises": "Only adapters (packages/core/src/**/bun-*.ts) may use the file system. Go through the FileSystem port."
+								},
+								"patterns": [
+									{
+										"group": ["**/packages/**"],
+										"message": "Import core through \"@nomnom/core\", never by relative path."
+									}
+								]
+							}
+						}
+					}
+				}
+			}
+		}
+	]
 }

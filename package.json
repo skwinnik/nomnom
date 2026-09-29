@@ -1,8 +1,11 @@
 {
 	"name": "nomnom",
-	"module": "index.ts",
 	"type": "module",
 	"private": true,
+	"workspaces": [
+		"apps/*",
+		"packages/*"
+	],
 	"devDependencies": {
 		"@biomejs/biome": "^2.5.14",
 		"@fission-ai/openspec": "^1.13.2",
@@ -21,7 +24,10 @@
 		"format": "biome format --write .",
 		"lint": "biome lint .",
 		"rules:generate": "rulesync generate",
-		"openspec:update": "openspec update"
+		"openspec:update": "openspec update",
+		"test": "bun test",
+		"typecheck": "tsc --noEmit",
+		"nomnom": "bun apps/cli/src/index.ts"
 	},
 	"lint-staged": {
 		"*": "biome check --write --no-errors-on-unmatched"
