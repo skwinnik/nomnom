@@ -2,7 +2,9 @@
 
 This design assumes `add-dry-run` has been applied and archived. By then, `log` declares `writes: true`, every write goes through the staged file system, and the runner commits after a successful command and holds standard output until the commit. The dry-run preview trims the common prefix and suffix of a file, so it shows one changed region.
 
-Today, `DayLogService.log(input: LogInput)` builds one line and runs it through `parseLine` and `checkEntry`, the rules of a hand-written line. It then reads and validates the day once with `readDay`, refuses to write when the file has errors, and writes once with `insertEntry` + `replaceAtomic`. `LogInput` holds the text of one entry: `ref`/`amount`/`unit` for a reference, `inline`/`nutrients` for an inline entry. The service also enforces that the two can't be mixed. A reference is built by `referenceLine`, which throws on the first problem it finds (the reference, the amount, `catalog.resolve(..., { newReference: true })` for unknown and archived items, `unitFactor`). An inline entry is built by `inlineLine`, and `checkEntry` then collects every problem.
+It also assumes `add-check-command` has been applied and archived. By then, `catalog/reference.ts` has `resolveReference(deps, ref, { unit, kind, newReference })`, which returns the item version and the resolved unit (the given one, or the default unit). It throws `NomnomError` for a wrong reference and `TargetError` (a subclass) for a broken target, such as an unusable food version. `checkEntry`, `DayLogService.referenceLine` and `RecipeService.pin` all use it. `ValidationContext` has `omitTargetProblems`, which only `check` sets.
+
+Then, `DayLogService.log(input: LogInput)` builds one line and runs it through `parseLine` and `checkEntry`, the rules of a hand-written line. It then reads and validates the day once with `readDay`, refuses to write when the file has errors, and writes once with `insertEntry` + `replaceAtomic`. `LogInput` holds the text of one entry: `ref`/`amount`/`unit` for a reference, `inline`/`nutrients` for an inline entry. The service also enforces that the two can't be mixed. A reference is built by `referenceLine`, which throws on the first problem it finds (the reference, the amount, then `resolveReference(..., { unit, newReference: true })` for unknown and archived items, unusable food versions and units). An inline entry is built by `inlineLine`, and `checkEntry` then collects every problem.
 
 `parseLine` removes a trailing comment in silence (`stripComment`). Problems from `checkEntry` that concern the entry itself have `file: ""`. The runner prints each problem as `${file}${:line}: ${message}`, so such a problem currently prints as `: message`.
 
@@ -61,7 +63,7 @@ log(input)
 ```
 
 - An `--entry` problem is `{ file: "", message: "entry <n> '<text>': <message>" }`, where `<n>` is the 1-based position among the `--entry` values and `<text>` is the value trimmed. A problem that `checkEntry` locates in another file (a broken recipe that a reference uses) keeps its file and line and follows the entry's own problem.
-- A thrown `NomnomError` while building one entry becomes one problem for it (plus any problems it carries). Any other exception is not caught.
+- A thrown `NomnomError` while building one entry becomes one problem for it (plus any problems it carries). This includes a `TargetError` from `resolveReference`, such as an unusable food version: like a hand-written line in `log`, the entry is rejected and the target's problem is reported at it. `log` never sets `omitTargetProblems`. Any other exception is not caught.
 - Entries are built one after another. Every build resolves through the catalog, which is already cached per run.
 - The message `Can't log <k> of <n> entries` gives the count. When only one `--entry` was given, it is `Can't log the entry`, and the labelled problem follows as usual.
 
@@ -85,15 +87,17 @@ Alternative considered: running `parseLine` on the value directly. It rejects a 
 
 ### Standard form from shared builders
 
-`referenceLine` is split so that the positional form and `--entry` share the second half:
+`referenceLine` is split so that the positional form and `--entry` share the second half. That half is a thin wrapper around `resolveReference` from `add-check-command`, which already resolves the item, checks the unit and returns the default unit:
 
 ```
 positional strings --parseItemRef/parseNumber/normaliseUnitName--+
                                                                  v
 parseEntryText(reference) ------------------------------> pinReference({ ref, amount, unit? })
-                                                          resolve(newReference) + default unit + unitFactor
+                                                          resolveReference(ref, { unit, newReference: true })
                                                           -> "<slug>@<version> <amount> <unit>"
 ```
+
+`pinReference` adds no checks of its own, so the single forms and `--entry` fail on exactly the rules `resolveReference` defines, with its messages.
 
 For an inline `--entry`, `checkEntry` runs on the parsed content first: unknown nutrient ids, duplicates and missing required nutrients. Only then is the line written as `"<description>" <id>=<value> ...` in catalog order. Writing first would drop an unknown id before the check could report it. `--inline` keeps using `parseNutrientInput`, which already produces catalog order.
 
@@ -118,3 +122,4 @@ Nothing specific is needed. The block is one contiguous insertion, so the `add-d
 - [An agent retries a failed call] → All or nothing means a retry never duplicates part of a meal.
 - [Several regions in one preview] → Can't happen: one call inserts at one point, because it logs one meal.
 - [`Logged.line` becomes `lines`] → The mocked `dayLog` service and the `log` command tests change with it. There are no other callers.
+- [`add-check-command` edits `daylog/validate.ts` and `DayLogService.referenceLine` too] → This change is applied after it and builds on its `resolveReference`. It uses `checkEntry` as it is and leaves `validate.ts` unchanged.

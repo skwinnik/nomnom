@@ -30,5 +30,5 @@ None.
 - `@nomnom/core`: `LogInput` gains `entries`, and `Logged` returns every added line instead of one. `DayLogService.log` builds and checks every entry before it reads and writes the day file once. `daylog/parse.ts` gains parsing of an `--entry` value (a day-file entry line with an optional version and no comment). `insertEntry` becomes `insertEntries`, inserting several lines at one point.
 - `@nomnom/cli`: `log` declares `--entry` (repeatable) and prints every added line. The runner prints problems without a file as their message alone.
 - No change to the day-file format or to any other command.
-- Depends on `add-dry-run` (the `Dry run of log` requirement, `writes: true` on `log`, commit after success). Apply and archive that change first.
+- Depends on `add-dry-run` (the `Dry run of log` requirement, `writes: true` on `log`, commit after success) and `add-check-command` (`resolveReference`, and usable food versions, which every `--entry` must pin like a hand-written line). Apply and archive both first.
 - Out of scope: several meals or dates in one call, comments in logged entries, aligning new lines with existing columns, reading entries from standard input, and printing totals.
