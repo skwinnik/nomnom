@@ -69,13 +69,21 @@ nomnom recipe show chicken-soup
 nomnom log breakfast apple-4601234567890 1 medium sized apple
 nomnom log dinner --inline 'restaurant ramen' --kcal 800 --protein 35 --date 2026-09-29
 
+# Optionally give the time it was eaten (HH:MM); nothing adds the current time for you.
+nomnom log breakfast apple-4601234567890 1 medium sized apple --time 08:15
+# Several entries in one call, each written like a day-file line and optionally with its own time.
+nomnom log breakfast --entry '07:30 oats 60 g' --entry 'milk 200 ml' --entry '08:10 "hotel coffee" kcal=5'
+nomnom log lunch --time 12:30 --entry 'rice 80 g' --entry 'chicken-soup 1 bowl'   # both at 12:30
+
 # Report a day (default: today) by meal, or a range with totals and the average per logged day.
 nomnom report 2026-09-29
 nomnom report 2026-09-23 2026-09-29 --entries
 nomnom report 2026-09-23 2026-09-29 --json
 ```
 
-`food add` and `recipe add` print the path of the new file; `recipe add` also prints its nutrients per serving and, with a yield, per 100 base units. `log` prints the line it added. `report` calculates totals from the day files; the average leaves out today, which may not be over. It fails, printing nothing on standard output, when any day in the range has errors, and lists every one with its file and line.
+`food add` and `recipe add` print the path of the new file; `recipe add` also prints its nutrients per serving and, with a yield, per 100 base units. `log` prints each line it added, as written to the day file, such as `08:15 apple-4601234567890@1 1 medium sized apple`. `--time` sets the time of the entry, or of every `--entry` value without its own time; giving it together with a value that has its own time (even the same one) is an error, reported with every other invalid entry, and nothing is written. `log` never adds a time by itself: without `--time` or a prefix, the entry is untimed, whatever the date. A time goes only in `--time` or an `--entry` value, so `nomnom log breakfast 08:15 apple 1` is rejected, and an `--inline` description that looks like a time stays text. `report` calculates totals from the day files; the average leaves out today, which may not be over. It fails, printing nothing on standard output, when any day in the range has errors, and lists every one with its file and line.
+
+In the text report, a timed entry shows its time before its name or description, as in `08:15 Apple  1 medium sized apple` or `19:30 "restaurant ramen"`; an untimed entry shows no time, and entries stay in file order. In `--json`, every entry has `time`: `"HH:MM"`, or `null` when the entry has none. Times never change a value or a total.
 
 ### Dry runs
 
@@ -231,19 +239,21 @@ A recipe always allows the unit `serving`; with a yield it also allows its base 
 ```
 # lines starting with # are comments
 [breakfast]
-greek-yogurt-2-460123@1  150 g
-apple@2                  1 medium sized apple   # a trailing comment
+07:45 greek-yogurt-2-460123@1  150 g
+apple@2                        1 medium sized apple   # a trailing comment
 
 [dinner]
-"restaurant ramen"       kcal=800 protein=35
+19:30 "restaurant ramen"       kcal=800 protein=35
 ```
 
 - `[meal]` starts a section; every entry belongs to one. Repeated sections of a meal are merged, and a meal that is not in `config.yaml` is accepted with a warning.
 - A reference entry is `<slug>@<version> <amount> [<unit>]`; the version is required, and without a unit the item's default unit is used.
 - An inline entry is `"<description>" <nutrient>=<number> ...` with the totals eaten; required nutrients must be given.
+- Either kind of entry may start with a time and whitespace, as in `08:15 apple@2 1 medium sized apple`. The time is optional and strictly `HH:MM`, from `00:00` to `23:59`. It is the local wall-clock time on the file's date, with no time zone; a time skipped or repeated by a daylight saving change is kept as written. Entries are never sorted by time, and a time need not match its meal.
+- A line whose first word is digits followed by `:` must start with a valid time and an entry: `8:15 apple@2 1`, `24:00 …`, `08:15apple@2 1`, a time alone or a time before a comment, a section header or another time are errors with the line number. Text inside an inline description, as in `"lunch at 12:30"`, is never a time, and slugs starting with digits, such as `7up@1 1 can`, are unaffected.
 - A `#` after whitespace starts a comment, except inside an inline entry's description.
 
-Day files store entries only, never totals. `nomnom log` inserts one line into the meal's section (or adds the section in meal order) and leaves every other line exactly as it was. It refuses to write into a day file that has errors and lists them with their line numbers.
+Day files store entries only, never totals. `nomnom log` inserts its lines, in the order given and whatever their times, at the end of the meal's section (or adds the section in meal order) and leaves every other line exactly as it was. It refuses to write into a day file that has errors and lists them with their line numbers.
 
 ## Layout
 

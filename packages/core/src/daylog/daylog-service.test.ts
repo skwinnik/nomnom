@@ -11,6 +11,7 @@ import {
 	recipe,
 } from "../store/__mocks__/versioned-store";
 import { createDayLogService, type LogInput } from "./daylog-service";
+import { readDay } from "./read-day";
 
 const day = "/data/logs/2026/2026-09-29.nom";
 
@@ -28,11 +29,20 @@ function setup(files: Record<string, string> = {}) {
 				food({ nutrients: { kcal: 360 } }),
 				food({ version: 2, nutrients: { kcal: 360, protien: 7 } }),
 			],
+			oats: [food(), food({ version: 2 })],
+			milk: [food({ baseUnit: "ml" })],
+			coffee: [food({ units: { cup: 240 } })],
+			"7up": [food({ baseUnit: "ml", units: { can: 330 } })],
 		},
 		recipes: {
 			batter: [recipe({ servings: 2, ingredients: [] })],
 		},
 	});
+	// Local noon on 2026-09-29, whatever the time zone.
+	const clock = createFixedClock(new Date(2026, 8, 29, 12, 0));
+	const paths = dataPaths("/data");
+	const config = createStaticConfigService();
+	const catalog = createCatalog({ store });
 	const service = createDayLogService({
 		fs: {
 			...fs,
@@ -44,15 +54,17 @@ function setup(files: Record<string, string> = {}) {
 				await fs.replaceAtomic(path, text);
 			},
 		},
-		// Local noon on 2026-09-29, whatever the time zone.
-		clock: createFixedClock(new Date(2026, 8, 29, 12, 0)),
-		paths: dataPaths("/data"),
-		config: createStaticConfigService(),
-		catalog: createCatalog({ store }),
+		clock,
+		paths,
+		config,
+		catalog,
 	});
 	const log = (input: Partial<LogInput>) =>
 		service.log({ meal: "breakfast", ...input });
-	return { fs, writes, log };
+	/** The day file checked by the rules of `check`. */
+	const readBack = async (date: string) =>
+		readDay({ fs, paths, catalog }, await config.load(), date);
+	return { fs, writes, log, clock, readBack };
 }
 
 async function rejection(promise: Promise<unknown>): Promise<NomnomError> {
@@ -424,5 +436,355 @@ describe("log --entry values", () => {
 		expect(fs.files.get(day)).toBe(
 			"[breakfast]\napple@2 1 g\napple@1 80 g\n\n[brunch]\napple@1 1\n",
 		);
+	});
+});
+
+describe("log with a time", () => {
+	test("--time with the positional form writes and returns the timed line", async () => {
+		const { fs, log } = setup();
+
+		const logged = await log({
+			ref: "apple",
+			amount: "1",
+			unit: "medium sized apple",
+			time: "08:15",
+			date: "2026-09-29",
+		});
+
+		expect(logged.lines).toEqual(["08:15 apple@2 1 medium sized apple"]);
+		expect(fs.files.get(day)).toBe(
+			"[breakfast]\n08:15 apple@2 1 medium sized apple\n",
+		);
+	});
+
+	test("--time with --inline writes the timed inline line", async () => {
+		const { fs, log } = setup();
+
+		const logged = await log({
+			meal: "dinner",
+			inline: "restaurant ramen",
+			nutrients: { kcal: "800", protein: "35" },
+			time: "19:30",
+		});
+
+		expect(logged.lines).toEqual([
+			'19:30 "restaurant ramen" kcal=800 protein=35',
+		]);
+		expect(fs.files.get(day)).toBe(
+			'[dinner]\n19:30 "restaurant ramen" kcal=800 protein=35\n',
+		);
+	});
+
+	test("keeps a time-like --inline description as text, without a time", async () => {
+		const { fs, log } = setup();
+
+		const logged = await log({
+			meal: "lunch",
+			inline: "12:30 ramen",
+			nutrients: { kcal: "800" },
+		});
+
+		expect(logged.lines).toEqual(['"12:30 ramen" kcal=800']);
+		expect(fs.files.get(day)).toBe('[lunch]\n"12:30 ramen" kcal=800\n');
+	});
+
+	test("--time with --entry values prefixes every line", async () => {
+		const { fs, log } = setup();
+
+		const logged = await log({
+			time: "07:45",
+			entries: ["oats 60 g", "milk 200 ml"],
+		});
+
+		expect(logged.lines).toEqual(["07:45 oats@2 60 g", "07:45 milk@1 200 ml"]);
+		expect(fs.files.get(day)).toBe(
+			"[breakfast]\n07:45 oats@2 60 g\n07:45 milk@1 200 ml\n",
+		);
+	});
+
+	test("writes a mixed batch of timed and untimed entries in order", async () => {
+		const { fs, log } = setup();
+
+		const logged = await log({
+			entries: [
+				"07:30 oats 60 g",
+				"milk 200 ml",
+				'08:10 "hotel coffee" kcal=5',
+			],
+		});
+
+		const lines = [
+			"07:30 oats@2 60 g",
+			"milk@1 200 ml",
+			'08:10 "hotel coffee" kcal=5',
+		];
+		expect(logged.lines).toEqual(lines);
+		expect(fs.files.get(day)).toBe(`[breakfast]\n${lines.join("\n")}\n`);
+	});
+
+	test("writes a timed --entry value in the standard form", async () => {
+		const { log } = setup();
+
+		const logged = await log({
+			entries: ["  08:15    apple   1 medium sized apple "],
+		});
+
+		expect(logged.lines).toEqual(["08:15 apple@2 1 medium sized apple"]);
+	});
+
+	test("writes a slug starting with digits without a time", async () => {
+		const { log } = setup();
+
+		expect((await log({ entries: ["7up 1 can"] })).lines).toEqual([
+			"7up@1 1 can",
+		]);
+	});
+});
+
+describe("log with a rejected time", () => {
+	test.each(["8:15", "24:00", "12:60"])(
+		"rejects --time %s at once, naming the value",
+		async (time) => {
+			const { fs, writes, log } = setup();
+
+			const error = await rejection(
+				log({ time, entries: ["oats 60 g", "unicorn 1", "milk 200 ml"] }),
+			);
+
+			expect(error.message).toBe(
+				`The time must be HH:MM, from 00:00 to 23:59, got '${time}'`,
+			);
+			expect(error.problems).toEqual([]);
+			expect(fs.files.size).toBe(0);
+			expect(writes).toEqual([]);
+		},
+	);
+
+	test.each([
+		["08:15", {}],
+		["8:15", {}],
+		["08:15", { time: "08:15" }],
+		["08:15", { inline: "tea", nutrients: { kcal: "2" } }],
+		["8:15", { entries: ["oats 60 g"] }],
+		["08:15", { amount: "1", unit: "g", date: "2026-09-29" }],
+	])("rejects the positional word %s with %p", async (ref, input) => {
+		const { fs, writes, log } = setup();
+
+		const error = await rejection(
+			log({ ref, amount: "1", ...(input as Partial<LogInput>) }),
+		);
+
+		expect(error.message).toBe(
+			"Give the time with --time, as in 'nomnom log breakfast apple 1 --time 08:15'",
+		);
+		expect(fs.files.size).toBe(0);
+		expect(writes).toEqual([]);
+	});
+
+	test("reports conflicting times with the other invalid entries", async () => {
+		const original = "[breakfast]\napple@1 150\n";
+		const { fs, writes, log } = setup({ [day]: original });
+		const before = new Map(fs.files);
+
+		const error = await rejection(
+			log({
+				time: "08:00",
+				entries: [
+					"07:30 oats 60 g",
+					"milk 200 ml",
+					"08:00 coffee 1 cup",
+					"apple 40 cup",
+				],
+			}),
+		);
+
+		expect(error.message).toBe("Can't log 3 of 4 entries");
+		expect(error.problems).toEqual([
+			{
+				file: "",
+				message:
+					"entry 1 '07:30 oats 60 g': it has its own time 07:30, which conflicts with --time 08:00",
+			},
+			{
+				file: "",
+				message:
+					"entry 3 '08:00 coffee 1 cup': it has its own time 08:00, which conflicts with --time 08:00",
+			},
+			{
+				file: "",
+				message:
+					"entry 4 'apple 40 cup': 'cup' is not a unit of apple@2; it allows 'g', 'medium sized apple'",
+			},
+		]);
+		expect(fs.files).toEqual(before);
+		expect(writes).toEqual([]);
+	});
+
+	test("lists a conflict first, then the value's other problems", async () => {
+		const { fs, log } = setup();
+
+		const error = await rejection(
+			log({ time: "08:00", entries: ["07:30 apple 1 cup"] }),
+		);
+
+		expect(error.message).toBe("Can't log the entry");
+		expect(error.problems).toEqual([
+			{
+				file: "",
+				message:
+					"entry 1 '07:30 apple 1 cup': it has its own time 07:30, which conflicts with --time 08:00",
+			},
+			{
+				file: "",
+				message:
+					"entry 1 '07:30 apple 1 cup': 'cup' is not a unit of apple@2; it allows 'g', 'medium sized apple'",
+			},
+		]);
+		expect(fs.files.size).toBe(0);
+	});
+
+	test("lists a conflict first, then an unknown item of the value", async () => {
+		const { log } = setup();
+
+		const error = await rejection(
+			log({ time: "08:00", entries: ["07:30 unicorn 1"] }),
+		);
+
+		expect(error.problems.map((p) => p.message)).toEqual([
+			"entry 1 '07:30 unicorn 1': it has its own time 07:30, which conflicts with --time 08:00",
+			"entry 1 '07:30 unicorn 1': 'unicorn' is neither a food nor a recipe",
+		]);
+	});
+
+	test.each([
+		[
+			"8:15 milk 200 ml",
+			"entry 2 '8:15 milk 200 ml': '8:15' is not a valid time: write it as HH:MM, from 00:00 to 23:59",
+		],
+		["08:15", "entry 2 '08:15': the time '08:15' needs an entry after it"],
+	])("rejects the --entry value %p", async (entry, message) => {
+		const { fs, writes, log } = setup();
+
+		const error = await rejection(log({ entries: ["oats 60 g", entry] }));
+
+		expect(error.message).toBe("Can't log 1 of 2 entries");
+		expect(error.problems).toEqual([{ file: "", message }]);
+		expect(fs.files.size).toBe(0);
+		expect(writes).toEqual([]);
+	});
+});
+
+describe("log times, the clock and dates", () => {
+	test.each([
+		["today at 08:15", undefined],
+		["a backdated date", "2026-09-20"],
+		["a future date", "2026-10-02"],
+	])("writes an untimed line for %s", async (_name, date) => {
+		const { fs, clock, log } = setup();
+		clock.set(new Date(2026, 8, 29, 8, 15));
+
+		const logged = await log({
+			ref: "apple",
+			amount: "1",
+			...(date === undefined ? {} : { date }),
+		});
+
+		expect(logged.lines).toEqual(["apple@2 1 g"]);
+		expect(fs.files.get(logged.path)).toBe("[breakfast]\napple@2 1 g\n");
+	});
+
+	test("writes a time skipped by a DST change as given", async () => {
+		const { fs, log, readBack } = setup();
+
+		const logged = await log({
+			ref: "apple",
+			amount: "1",
+			date: "2026-03-29",
+			time: "02:30",
+		});
+
+		expect(logged.path).toBe("/data/logs/2026/2026-03-29.nom");
+		expect(fs.files.get(logged.path)).toBe("[breakfast]\n02:30 apple@2 1 g\n");
+		expect((await readBack("2026-03-29")).check.errors).toEqual([]);
+	});
+
+	test("accepts a time later than now on today's date", async () => {
+		const { fs, log } = setup();
+
+		const logged = await log({ ref: "apple", amount: "1", time: "23:59" });
+
+		expect(logged.date).toBe("2026-09-29");
+		expect(fs.files.get(day)).toBe("[breakfast]\n23:59 apple@2 1 g\n");
+	});
+
+	test("inserts an earlier time after a later one, moving no line", async () => {
+		const original = [
+			"[breakfast]",
+			"09:00 coffee@1 1 cup",
+			"",
+			"[lunch]",
+			"milk@1   250 ml   # after work",
+			'12:30   "soup"  kcal=90',
+			"",
+		].join("\n");
+		const { fs, log, readBack } = setup({ [day]: original });
+
+		const logged = await log({
+			ref: "oats",
+			amount: "60",
+			unit: "g",
+			time: "07:30",
+		});
+
+		expect(logged.lines).toEqual(["07:30 oats@2 60 g"]);
+		expect(fs.files.get(day)).toBe(
+			[
+				"[breakfast]",
+				"09:00 coffee@1 1 cup",
+				"07:30 oats@2 60 g",
+				"",
+				"[lunch]",
+				"milk@1   250 ml   # after work",
+				'12:30   "soup"  kcal=90',
+				"",
+			].join("\n"),
+		);
+		expect((await readBack("2026-09-29")).check.errors).toEqual([]);
+	});
+
+	test("every written timed line is accepted by the rules of check", async () => {
+		const { log, readBack } = setup();
+
+		await log({ ref: "apple", amount: "1", time: "00:00" });
+		await log({
+			meal: "dinner",
+			inline: "tea",
+			nutrients: { kcal: "2" },
+			time: "23:59",
+		});
+		await log({
+			meal: "snack",
+			time: "16:00",
+			entries: ["7up 1 can", '"cookie" kcal=120'],
+		});
+		await log({ meal: "lunch", entries: ["12:30 oats 60 g", "milk 200"] });
+
+		const { lines, check } = await readBack("2026-09-29");
+		expect(check.errors).toEqual([]);
+		expect(lines.map((l) => l.raw)).toEqual([
+			"[breakfast]",
+			"00:00 apple@2 1 g",
+			"",
+			"[lunch]",
+			"12:30 oats@2 60 g",
+			"milk@1 200 ml",
+			"",
+			"[dinner]",
+			'23:59 "tea" kcal=2',
+			"",
+			"[snack]",
+			"16:00 7up@1 1 can",
+			'16:00 "cookie" kcal=120',
+		]);
 	});
 });

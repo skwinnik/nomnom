@@ -2,6 +2,7 @@ import { MEAL_ID_PATTERN } from "../config/config";
 import { NomnomError } from "../errors";
 import { tryParseNumber } from "../shared/numbers";
 import { type ItemRef, parseItemRef } from "../shared/references";
+import { isTimeOfDay } from "../shared/time";
 import { normaliseUnitName } from "../shared/units";
 
 export interface InlineValue {
@@ -16,6 +17,8 @@ export type LineContent =
 	| { readonly kind: "section"; readonly meal: string }
 	| {
 			readonly kind: "reference";
+			/** Local wall-clock time `HH:MM` on the file's date, kept as written; absent when untimed. */
+			readonly time?: string;
 			readonly slug: string;
 			readonly version: number;
 			readonly amount: number;
@@ -24,6 +27,8 @@ export type LineContent =
 	  }
 	| {
 			readonly kind: "inline";
+			/** Local wall-clock time `HH:MM` on the file's date, kept as written; absent when untimed. */
+			readonly time?: string;
 			readonly description: string;
 			/** In the order written; checked against the catalog by validation. */
 			readonly values: readonly InlineValue[];
@@ -63,15 +68,62 @@ export function parseLine(raw: string): LineContent {
 	if (line === "") return { kind: "blank" };
 	if (line.startsWith("#")) return { kind: "comment" };
 	try {
-		if (line.startsWith("[")) return parseSection(stripComment(line));
-		if (line.startsWith('"')) return parseInline(line);
-		return parseReference(stripComment(line));
+		const { time, rest } = splitTime(line);
+		// splitTime rejects a header after a time, so only untimed lines get here.
+		if (rest.startsWith("[")) return parseSection(stripComment(rest));
+		const entry = rest.startsWith('"')
+			? parseInline(rest)
+			: parseReference(stripComment(rest));
+		return time === undefined ? entry : { ...entry, time };
 	} catch (error) {
 		if (error instanceof NomnomError) {
 			return { kind: "error", message: error.message };
 		}
 		throw error;
 	}
+}
+
+/** A first word of digits and a colon, as in `08:15` or `8:15pm`. */
+const TIME_LIKE = /^\d+:/;
+
+/**
+ * Splits the time prefix off a trimmed line. The first word decides: when it
+ * isn't time-like, the line has no time and is returned unchanged. Slugs never
+ * contain `:`, so no reference, not even one starting with digits such as
+ * `7up@1`, can be taken for a time. A time-like word must be a valid time
+ * followed by whitespace and an entry; anything else throws `NomnomError`.
+ * The rest is checked before comments are removed, so `08:15  # x` is a time
+ * without an entry.
+ */
+function splitTime(line: string): { readonly time?: string; rest: string } {
+	const [word = ""] = line.split(/\s/, 1);
+	if (!TIME_LIKE.test(word)) return { rest: line };
+	if (!isTimeOfDay(word)) {
+		if (isTimeOfDay(word.slice(0, 5)) && !/[\d:]/.test(word.charAt(5))) {
+			throw new NomnomError(
+				`the time '${word.slice(0, 5)}' must be followed by a space and an entry`,
+			);
+		}
+		throw new NomnomError(
+			`'${word}' is not a valid time: write it as HH:MM, from 00:00 to 23:59`,
+		);
+	}
+	const rest = line.slice(word.length).trimStart();
+	if (rest === "" || rest.startsWith("#")) {
+		throw new NomnomError(`the time '${word}' needs an entry after it`);
+	}
+	if (rest.startsWith("[")) {
+		throw new NomnomError(
+			`the time '${word}' needs an entry after it, not a section header`,
+		);
+	}
+	const [next = ""] = rest.split(/\s/, 1);
+	if (TIME_LIKE.test(next)) {
+		throw new NomnomError(
+			`a line has at most one time, got '${next}' after '${word}'`,
+		);
+	}
+	return { time: word, rest };
 }
 
 /** Removes a trailing comment: a `#` preceded by whitespace, up to the end of the line. */
@@ -96,7 +148,9 @@ function parseSection(line: string): LineContent {
 	return { kind: "section", meal };
 }
 
-function parseReference(line: string): LineContent {
+function parseReference(
+	line: string,
+): Extract<LineContent, { kind: "reference" }> {
 	const [ref = "", amountText, ...unitWords] = line.split(/\s+/);
 	if (!ref.includes("@")) {
 		throw new NomnomError(
@@ -164,25 +218,36 @@ function parseInline(line: string): Extract<LineContent, { kind: "inline" }> {
 	return { kind: "inline", description, values };
 }
 
-/**
- * Parses an entry given on the command line: a day-file entry line whose
- * reference may omit the version. Unlike a day file, it rejects comments
- * instead of removing them. Throws `NomnomError`.
- */
-export function parseEntryText(text: string):
+type EntryText =
 	| {
 			readonly kind: "reference";
+			/** As on a day-file line; absent when untimed. */
+			readonly time?: string;
 			readonly ref: ItemRef;
 			readonly amount: number;
 			readonly unit?: string;
 	  }
-	| Extract<LineContent, { kind: "inline" }> {
-	const line = text.trim();
-	if (line === "" || line.startsWith("#") || line.startsWith("[")) {
+	| Extract<LineContent, { kind: "inline" }>;
+
+/**
+ * Parses an entry given on the command line: a day-file entry line, with an
+ * optional time prefix, whose reference may omit the version. Unlike a day
+ * file, it rejects comments instead of removing them. Throws `NomnomError`.
+ */
+export function parseEntryText(text: string): EntryText {
+	const trimmed = text.trim();
+	if (trimmed === "" || trimmed.startsWith("#") || trimmed.startsWith("[")) {
 		throw new NomnomError(
 			`expected an entry such as 'apple 1' or '"ramen" kcal=800'`,
 		);
 	}
+	// Before the comment check, so '08:15 # x' is a time without an entry.
+	const { time, rest } = splitTime(trimmed);
+	const entry = parseEntryRest(rest);
+	return time === undefined ? entry : { ...entry, time };
+}
+
+function parseEntryRest(line: string): EntryText {
 	// Before the rest of the parsing, so a comment isn't reported as a bad unit.
 	// An unclosed description is left to parseInline to report.
 	const inline = line.startsWith('"');

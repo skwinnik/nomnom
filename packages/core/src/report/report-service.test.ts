@@ -12,7 +12,11 @@ import {
 	food,
 	recipe,
 } from "../store/__mocks__/versioned-store";
-import { createReportService, type ReportInput } from "./report-service";
+import {
+	createReportService,
+	type Report,
+	type ReportInput,
+} from "./report-service";
 
 const dayPath = (date: string) => `/data/logs/${date.slice(0, 4)}/${date}.nom`;
 
@@ -30,6 +34,24 @@ const store = () =>
 			water: [food({ baseUnit: "ml", nutrients: { kcal: 0 } })],
 			rice: [food({ name: "Rice", nutrients: { kcal: 130, carbs: 28 } })],
 			apple: [food({ name: "Apple", nutrients: { protein: 0.3 } })],
+			coffee: [
+				food({ name: "Coffee", nutrients: { kcal: 1 }, units: { cup: 240 } }),
+			],
+			oats: [
+				food({ name: "Oats", nutrients: { kcal: 380 } }),
+				food({
+					version: 2,
+					name: "Oats",
+					nutrients: { kcal: 370, protein: 13, carbs: 60 },
+				}),
+			],
+			milk: [
+				food({
+					name: "Milk",
+					baseUnit: "ml",
+					nutrients: { kcal: 60, protein: 3.2, fat: 3.3 },
+				}),
+			],
 		},
 		recipes: {
 			"chicken-soup": [
@@ -232,6 +254,7 @@ describe("entry nutrients", () => {
 		expect(lunch?.entries).toEqual([
 			{
 				line: 2,
+				time: undefined,
 				kind: "reference",
 				slug: "chicken-soup",
 				version: 1,
@@ -246,6 +269,7 @@ describe("entry nutrients", () => {
 		expect(dinner?.entries).toEqual([
 			{
 				line: 4,
+				time: undefined,
 				kind: "inline",
 				description: "restaurant ramen",
 				nutrients: new Map([
@@ -418,6 +442,144 @@ describe("ranges", () => {
 		});
 
 		expect(report.days[0]?.meals[0]?.entries).toHaveLength(1);
+	});
+});
+
+describe("entry times", () => {
+	const untimed = [
+		"[breakfast]",
+		"coffee@1 1 cup",
+		"oats@2 60 g",
+		"milk@1 200 ml",
+		"[dinner]",
+		'"restaurant ramen" kcal=800 protein=35',
+	].join("\n");
+	const timed = [
+		"[breakfast]",
+		"09:00 coffee@1 1 cup",
+		"oats@2 60 g",
+		"07:30 milk@1 200 ml",
+		"[dinner]",
+		'19:30 "restaurant ramen" kcal=800 protein=35',
+	].join("\n");
+
+	const entriesOf = (report: Report) =>
+		report.days.flatMap((day) =>
+			day.meals.flatMap((meal) => meal.entries ?? []),
+		);
+
+	/** Every calculated value of a report, without its entries' times. */
+	const valuesOf = (report: Report) => ({
+		days: report.days.map((day) => ({
+			totals: values(day.totals),
+			meals: day.meals.map((meal) => ({
+				meal: meal.meal,
+				totals: values(meal.totals),
+				entries: meal.entries?.map((entry) => ({
+					line: entry.line,
+					nutrients: values(entry.nutrients),
+				})),
+			})),
+		})),
+		loggedDays: report.loggedDays,
+		totals: values(report.totals),
+		averageDays: report.averageDays,
+		average: values(report.average),
+	});
+
+	test("a timed reference and a timed inline entry have their times", async () => {
+		const report = await setup({
+			"2026-09-29": [
+				"[breakfast]",
+				"08:15 rice@1 80",
+				"[dinner]",
+				'19:30 "restaurant ramen" kcal=800 protein=35',
+			].join("\n"),
+		})();
+
+		expect(entriesOf(report)).toEqual([
+			expect.objectContaining({ line: 2, kind: "reference", time: "08:15" }),
+			expect.objectContaining({ line: 4, kind: "inline", time: "19:30" }),
+		]);
+	});
+
+	test("an untimed entry has the time key, undefined", async () => {
+		const report = await setup({ "2026-09-29": untimed })();
+
+		const entries = entriesOf(report);
+		expect(entries).toHaveLength(4);
+		for (const entry of entries) {
+			expect(Object.hasOwn(entry, "time")).toBe(true);
+			expect(entry.time).toBeUndefined();
+		}
+	});
+
+	test("entries keep their file order, whatever their times", async () => {
+		const report = await setup({ "2026-09-29": timed })();
+
+		const breakfast = report.days[0]?.meals[0];
+		expect(breakfast?.meal).toBe("breakfast");
+		expect(
+			breakfast?.entries?.map((entry) => [
+				entry.kind === "reference" ? entry.slug : entry.description,
+				entry.time,
+			]),
+		).toEqual([
+			["coffee", "09:00"],
+			["oats", undefined],
+			["milk", "07:30"],
+		]);
+	});
+
+	test("times skipped or repeated by a DST change are kept as written", async () => {
+		const report = await setup({
+			"2026-03-29": '[snack]\n02:30 "bottle of milk" kcal=120\n',
+			"2026-10-25": '[snack]\n02:15 "tea" kcal=2\n02:45 "biscuit" kcal=60\n',
+		})({ from: "2026-03-29", to: "2026-10-25", entries: true });
+
+		expect(entriesOf(report).map((entry) => entry.time)).toEqual([
+			"02:30",
+			"02:15",
+			"02:45",
+		]);
+	});
+
+	test("times change no value, total or average", async () => {
+		const range = { from: "2026-09-27", to: "2026-09-29", entries: true };
+
+		const withTimes = await setup({
+			"2026-09-27": timed,
+			"2026-09-29": timed,
+		})(range);
+		const withoutTimes = await setup({
+			"2026-09-27": untimed,
+			"2026-09-29": untimed,
+		})(range);
+
+		expect(valuesOf(withTimes)).toEqual(valuesOf(withoutTimes));
+		expect(withTimes.days[0]?.meals[0]?.totals.get("kcal")).toBeCloseTo(
+			1 * 2.4 + 370 * 0.6 + 60 * 2,
+			10,
+		);
+	});
+
+	test("each day of a range with entries keeps its times", async () => {
+		const report = await setup({
+			"2026-09-23": "[breakfast]\n08:15 rice@1 80\noats@2 60 g\n",
+			"2026-09-25": '[lunch]\n12:30 "restaurant ramen" kcal=800\n',
+		})({ from: "2026-09-23", to: "2026-09-26", entries: true });
+
+		expect(
+			report.days.map((day) => [
+				day.date,
+				day.meals.flatMap((meal) => meal.entries?.map((e) => e.time) ?? []),
+			]),
+		).toEqual([
+			["2026-09-23", ["08:15", undefined]],
+			["2026-09-24", []],
+			["2026-09-25", ["12:30"]],
+			["2026-09-26", []],
+		]);
 	});
 });
 

@@ -379,6 +379,61 @@ describe("day files", () => {
 		);
 	});
 
+	test("reports malformed times and times without an entry with their lines", async () => {
+		expect(
+			await errorsOf({
+				foods: { rice },
+				days: {
+					"2026-09-28": [
+						"[lunch]",
+						"8:15 rice@1 80",
+						"24:00 rice@1 80",
+						"12:30rice@1 80",
+						"",
+						"[snack]",
+						"08:15",
+						"08:15  # coffee",
+						"08:15 [dinner]",
+						"08:15 09:00 rice@1 80",
+						"",
+					].join("\n"),
+				},
+			}),
+		).toEqual([
+			"logs/2026/2026-09-28.nom:2: '8:15' is not a valid time: write it as HH:MM, from 00:00 to 23:59",
+			"logs/2026/2026-09-28.nom:3: '24:00' is not a valid time: write it as HH:MM, from 00:00 to 23:59",
+			"logs/2026/2026-09-28.nom:4: the time '12:30' must be followed by a space and an entry",
+			"logs/2026/2026-09-28.nom:7: the time '08:15' needs an entry after it",
+			"logs/2026/2026-09-28.nom:8: the time '08:15' needs an entry after it",
+			"logs/2026/2026-09-28.nom:9: the time '08:15' needs an entry after it, not a section header",
+			"logs/2026/2026-09-28.nom:10: a line has at most one time, got '09:00' after '08:15'",
+		]);
+	});
+
+	test("accepts a day with timed entries", async () => {
+		const result = await check({
+			foods: { rice },
+			days: {
+				"2026-09-29": [
+					"[breakfast]",
+					'23:30 "late cereal" kcal=300',
+					"rice@1 80",
+					"",
+					"[dinner]",
+					"19:30 rice@1 80 g  # with friends",
+					'02:30\t"bottle of milk" kcal=120',
+					"",
+				].join("\n"),
+			},
+		});
+
+		expect(result).toEqual({
+			errors: [],
+			warnings: [],
+			checked: { foods: 1, recipes: 0, days: 1 },
+		});
+	});
+
 	test("an unknown meal is a warning only", async () => {
 		const result = await check({
 			foods: { rice },

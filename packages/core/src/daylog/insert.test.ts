@@ -141,6 +141,36 @@ describe("insertEntries", () => {
 		expect(result.split("\n")[4]).toBe("apple@2 1 g");
 	});
 
+	test("inserts an earlier time after a later one, moving no line", () => {
+		const original = [
+			"[breakfast]",
+			"  apple@2   1 medium sized apple",
+			"09:00 coffee@1 1 cup\r",
+			"",
+			"[lunch]",
+			'12:30\t"restaurant ramen"  kcal=800',
+			"rice@1 80",
+			"",
+		].join("\n");
+
+		const result = insert(original, "breakfast", "07:30 oats@2 60 g");
+
+		expect(result).toBe(
+			[
+				"[breakfast]",
+				"  apple@2   1 medium sized apple",
+				"09:00 coffee@1 1 cup\r",
+				"07:30 oats@2 60 g",
+				"",
+				"[lunch]",
+				'12:30\t"restaurant ramen"  kcal=800',
+				"rice@1 80",
+				"",
+			].join("\n"),
+		);
+		expectPreserved(original, result, ["07:30 oats@2 60 g"]);
+	});
+
 	test("inserts several entries after a trailing comment of the section, in order", () => {
 		const original =
 			"[breakfast]\neggs@2 2\n# before the run\n\n[lunch]\nrice@1 80\n";

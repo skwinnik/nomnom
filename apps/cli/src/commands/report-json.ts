@@ -47,16 +47,30 @@ function entryJson(
 	values: (nutrients: Nutrients) => Record<string, number>,
 ) {
 	const nutrients = values(entry.nutrients);
+	// Every entry has `time`, `null` when it has none.
+	const time = entry.time ?? null;
 	if (entry.kind === "inline") {
 		return {
 			line: entry.line,
 			kind: entry.kind,
+			time,
 			description: entry.description,
 			nutrients,
 		};
 	}
 	const { line, kind, slug, version, item, name, amount, unit } = entry;
-	return { line, kind, slug, version, item, name, amount, unit, nutrients };
+	return {
+		line,
+		kind,
+		time,
+		slug,
+		version,
+		item,
+		name,
+		amount,
+		unit,
+		nutrients,
+	};
 }
 
 function nutrientObject(

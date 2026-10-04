@@ -77,6 +77,7 @@ export function report(
 /** `apple@2 1 medium sized apple` under breakfast. */
 export const appleEntry: ReportEntry = {
 	line: 2,
+	time: undefined,
 	kind: "reference",
 	slug: "apple",
 	version: 2,
@@ -96,6 +97,7 @@ export const appleEntry: ReportEntry = {
 /** `"restaurant ramen" kcal=800 protein=35` under dinner. */
 export const ramenEntry: ReportEntry = {
 	line: 5,
+	time: undefined,
 	kind: "inline",
 	description: "restaurant ramen",
 	nutrients: nutrients({ kcal: 800, protein: 35 }),

@@ -79,6 +79,14 @@ describe("parseConfig", () => {
 		expect(problems[0]?.message).toContain("'name' is reserved");
 	});
 
+	test("rejects a nutrient id that clashes with the log --time option", () => {
+		const problems = problemsOf(
+			withNutrients(kcal, "  - { id: time, name: Time, unit: min }"),
+		);
+
+		expect(problems[0]?.message).toContain("'time' is reserved");
+	});
+
 	test("rejects a nutrient without a name or unit", () => {
 		const problems = problemsOf(withNutrients("  - { id: kcal }"));
 

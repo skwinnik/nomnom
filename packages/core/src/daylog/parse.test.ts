@@ -69,6 +69,117 @@ describe("parseDay", () => {
 		expect(line?.raw).toBe("[lunch]\r");
 		expect(line?.content).toEqual({ kind: "section", meal: "lunch" });
 	});
+
+	test("parses the example day with times", () => {
+		const text = [
+			"[breakfast]",
+			"07:45 greek-yogurt-2-460123@1  150 g",
+			"apple@2                        1 medium sized apple",
+			"",
+			"[dinner]",
+			'19:30 "restaurant ramen"       kcal=800 protein=35  # with friends',
+			"",
+		].join("\n");
+
+		const lines = parseDay(text);
+
+		expect(lines.map((line) => line.content)).toEqual([
+			{ kind: "section", meal: "breakfast" },
+			{
+				kind: "reference",
+				time: "07:45",
+				slug: "greek-yogurt-2-460123",
+				version: 1,
+				amount: 150,
+				unit: "g",
+			},
+			{
+				kind: "reference",
+				slug: "apple",
+				version: 2,
+				amount: 1,
+				unit: "medium sized apple",
+			},
+			{ kind: "blank" },
+			{ kind: "section", meal: "dinner" },
+			{
+				kind: "inline",
+				time: "19:30",
+				description: "restaurant ramen",
+				values: [
+					{ id: "kcal", value: 800 },
+					{ id: "protein", value: 35 },
+				],
+			},
+		]);
+		expect(lines[2]?.content).not.toHaveProperty("time");
+	});
+
+	test("keeps timed and untimed entries in file order, whatever their times", () => {
+		const lines = parseDay(
+			"[breakfast]\n09:00 coffee@1 1 cup\n07:30 oats@2 60 g\nmilk@1 200 ml\n",
+		);
+
+		expect(lines.map((line) => line.content)).toEqual([
+			{ kind: "section", meal: "breakfast" },
+			{
+				kind: "reference",
+				time: "09:00",
+				slug: "coffee",
+				version: 1,
+				amount: 1,
+				unit: "cup",
+			},
+			{
+				kind: "reference",
+				time: "07:30",
+				slug: "oats",
+				version: 2,
+				amount: 60,
+				unit: "g",
+			},
+			{ kind: "reference", slug: "milk", version: 1, amount: 200, unit: "ml" },
+		]);
+		expect(lines[3]?.content).not.toHaveProperty("time");
+	});
+
+	test("keeps DST wall times as written, in file order", () => {
+		const lines = parseDay(
+			[
+				"[snack]",
+				'02:30 "bottle of milk" kcal=120',
+				'02:15 "tea" kcal=2',
+				'02:45 "biscuit" kcal=60',
+			].join("\n"),
+		);
+
+		expect(
+			lines.map((line) => line.content.kind === "inline" && line.content.time),
+		).toEqual([false, "02:30", "02:15", "02:45"]);
+	});
+
+	test("keeps the raw text of timed and legacy lines byte for byte", () => {
+		const raws = [
+			"  [breakfast]  ",
+			"\t08:15\t\tapple@2   1  medium sized apple   # x\r",
+			"   apple@2\t1 medium sized apple  \r",
+			' 12:30   "restaurant ramen"  kcal=800 ',
+			'"lunch at 12:30"   kcal=500\r',
+			"7up@1 1 can",
+		];
+
+		const lines = parseDay(`${raws.join("\n")}\n`);
+
+		expect(lines.map((line) => line.raw)).toEqual(raws);
+		expect(lines.map((line) => line.content.kind)).toEqual([
+			"section",
+			"reference",
+			"reference",
+			"inline",
+			"inline",
+			"reference",
+		]);
+	});
 });
 
 describe("parseLine", () => {
@@ -155,6 +266,160 @@ describe("parseLine", () => {
 		expect(content.kind).toBe("error");
 		expect(content.kind === "error" && content.message).toContain(message);
 	});
+
+	describe("times", () => {
+		test("a timed reference with a multi-word unit", () => {
+			expect(parseLine("08:15 apple@2 1 medium sized apple")).toEqual({
+				kind: "reference",
+				time: "08:15",
+				slug: "apple",
+				version: 2,
+				amount: 1,
+				unit: "medium sized apple",
+			});
+		});
+
+		test("a timed reference with a slug starting with digits", () => {
+			expect(parseLine("18:00 7up@1 1 can")).toEqual({
+				kind: "reference",
+				time: "18:00",
+				slug: "7up",
+				version: 1,
+				amount: 1,
+				unit: "can",
+			});
+		});
+
+		test("a timed inline entry", () => {
+			expect(parseLine('12:30 "restaurant ramen" kcal=800 protein=35')).toEqual(
+				{
+					kind: "inline",
+					time: "12:30",
+					description: "restaurant ramen",
+					values: [
+						{ id: "kcal", value: 800 },
+						{ id: "protein", value: 35 },
+					],
+				},
+			);
+		});
+
+		test.each([
+			["a tab", "08:15\tapple@2 1"],
+			["several spaces", "08:15     apple@2 1"],
+			["tabs and spaces", "08:15 \t apple@2 1"],
+			["a CRLF line break", "08:15 apple@2 1\r"],
+		])("reads the time followed by %s", (_name, line) => {
+			expect(parseLine(line)).toEqual({
+				kind: "reference",
+				time: "08:15",
+				slug: "apple",
+				version: 2,
+				amount: 1,
+			});
+		});
+
+		test("a time that doesn't match the meal", () => {
+			expect(parseLine('23:30 "late cereal" kcal=300')).toMatchObject({
+				kind: "inline",
+				time: "23:30",
+				description: "late cereal",
+			});
+		});
+
+		test.each(["00:00", "23:59"])(
+			"the start and end of the day: %s",
+			(time) => {
+				expect(parseLine(`${time} "midnight snack" kcal=150`)).toMatchObject({
+					kind: "inline",
+					time,
+				});
+			},
+		);
+
+		test.each([
+			[
+				"apple@2 1 medium sized apple",
+				{
+					kind: "reference",
+					slug: "apple",
+					version: 2,
+					amount: 1,
+					unit: "medium sized apple",
+				},
+			],
+			[
+				"7up@1 1 can",
+				{ kind: "reference", slug: "7up", version: 1, amount: 1, unit: "can" },
+			],
+			[
+				"123-cereal@2 40 g",
+				{
+					kind: "reference",
+					slug: "123-cereal",
+					version: 2,
+					amount: 40,
+					unit: "g",
+				},
+			],
+			[
+				'"lunch at 12:30" kcal=500',
+				{
+					kind: "inline",
+					description: "lunch at 12:30",
+					values: [{ id: "kcal", value: 500 }],
+				},
+			],
+			["# 08:15 coffee", { kind: "comment" }],
+			["[lunch] # 12:30", { kind: "section", meal: "lunch" }],
+		])("reads %j as without times, with no time key", (line, content) => {
+			const parsed = parseLine(line);
+
+			expect(parsed).toEqual(content as typeof parsed);
+			expect(parsed).not.toHaveProperty("time");
+		});
+
+		test.each([
+			[
+				"08:15apple@2 1 medium sized apple",
+				"the time '08:15' must be followed by a space and an entry",
+			],
+			[
+				'12:30"ramen" kcal=800',
+				"the time '12:30' must be followed by a space and an entry",
+			],
+			...["8:15", "24:00", "12:60", "08:15:30", "8:15pm", "08:5"].map(
+				(time) => [
+					`${time} apple@2 1 medium sized apple`,
+					`'${time}' is not a valid time: write it as HH:MM, from 00:00 to 23:59`,
+				],
+			),
+			[
+				"8:15 # coffee",
+				"'8:15' is not a valid time: write it as HH:MM, from 00:00 to 23:59",
+			],
+			[
+				"24:00 [lunch]",
+				"'24:00' is not a valid time: write it as HH:MM, from 00:00 to 23:59",
+			],
+			["08:15", "the time '08:15' needs an entry after it"],
+			["08:15  # coffee", "the time '08:15' needs an entry after it"],
+			[
+				"08:15 [lunch]",
+				"the time '08:15' needs an entry after it, not a section header",
+			],
+			[
+				"08:15 09:00 apple@2 1",
+				"a line has at most one time, got '09:00' after '08:15'",
+			],
+			[
+				"08:15 apple 1 medium sized apple",
+				"'apple' needs a version: write it as apple@<version>, as in apple@2",
+			],
+		])("reports %j as an error line", (line, message) => {
+			expect(parseLine(line)).toEqual({ kind: "error", message });
+		});
+	});
 });
 
 describe("parseEntryText", () => {
@@ -222,5 +487,83 @@ describe("parseEntryText", () => {
 		["an amount in an inline entry", '"ramen" 1 bowl', "expected <nutrient>"],
 	])("rejects %s", (_name, text, message) => {
 		expect(() => parseEntryText(text)).toThrow(message);
+	});
+
+	describe("times", () => {
+		test("parses a timed reference with or without a version", () => {
+			expect(parseEntryText("08:15 apple 1 medium sized apple")).toEqual({
+				kind: "reference",
+				time: "08:15",
+				ref: { slug: "apple" },
+				amount: 1,
+				unit: "medium sized apple",
+			});
+			expect(parseEntryText("07:30 oats@2 60 g")).toEqual({
+				kind: "reference",
+				time: "07:30",
+				ref: { slug: "oats", version: 2 },
+				amount: 60,
+				unit: "g",
+			});
+		});
+
+		test("parses a timed inline entry", () => {
+			expect(parseEntryText('08:10 "hotel coffee" kcal=5')).toEqual({
+				kind: "inline",
+				time: "08:10",
+				description: "hotel coffee",
+				values: [{ id: "kcal", value: 5 }],
+			});
+		});
+
+		test("ignores the spacing around and after the time", () => {
+			expect(
+				parseEntryText("  08:15    apple   1 medium sized apple "),
+			).toEqual({
+				kind: "reference",
+				time: "08:15",
+				ref: { slug: "apple" },
+				amount: 1,
+				unit: "medium sized apple",
+			});
+		});
+
+		test.each([
+			[
+				"7up 1 can",
+				{ kind: "reference", ref: { slug: "7up" }, amount: 1, unit: "can" },
+			],
+			[
+				'"ramen # spicy" kcal=800',
+				{
+					kind: "inline",
+					description: "ramen # spicy",
+					values: [{ id: "kcal", value: 800 }],
+				},
+			],
+		])("reads %j as untimed", (text, entry) => {
+			const parsed = parseEntryText(text);
+
+			expect(parsed).toEqual(entry as typeof parsed);
+			expect(parsed).not.toHaveProperty("time");
+		});
+
+		test.each([
+			["08:15", "the time '08:15' needs an entry after it"],
+			["08:15 # x", "the time '08:15' needs an entry after it"],
+			[
+				"08:15 apple 1 # x",
+				"entries can't contain comments ('#'); add comments to the day file by hand",
+			],
+			[
+				"8:15 milk 200 ml",
+				"'8:15' is not a valid time: write it as HH:MM, from 00:00 to 23:59",
+			],
+			["[lunch]", "expected an entry such as"],
+			["", "expected an entry such as"],
+			["# x", "expected an entry such as"],
+		])("rejects %j", (text, message) => {
+			expect(() => parseEntryText(text)).toThrow(message);
+		});
 	});
 });

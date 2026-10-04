@@ -31,6 +31,15 @@ export function isIsoDate(text: string): boolean {
 	);
 }
 
+/**
+ * Whether `text` is a time of day written as `HH:MM`, from `00:00` to `23:59`.
+ * This is the only definition of a valid time: entry times in day files and
+ * `--time` both use it.
+ */
+export function isTimeOfDay(text: string): boolean {
+	return /^([01]\d|2[0-3]):[0-5]\d$/.test(text);
+}
+
 /** Whether `text` is an ISO 8601 timestamp with a UTC offset or `Z`. */
 export function isTimestampWithOffset(text: string): boolean {
 	return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.test(

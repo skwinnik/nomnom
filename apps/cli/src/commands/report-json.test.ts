@@ -1,4 +1,5 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import type { ReportEntry } from "@nomnom/core";
 import {
 	appleEntry,
 	day,
@@ -66,6 +67,7 @@ test("a day report", () => {
 							{
 								line: 2,
 								kind: "reference",
+								time: null,
 								slug: "apple",
 								version: 2,
 								item: "food",
@@ -84,6 +86,7 @@ test("a day report", () => {
 							{
 								line: 5,
 								kind: "inline",
+								time: null,
 								description: "restaurant ramen",
 								nutrients: ramen,
 							},
@@ -182,5 +185,159 @@ test("a day with nothing logged", () => {
 		averageDays: [],
 		average: null,
 		warnings: [],
+	});
+});
+
+describe("entry times", () => {
+	const coffee: ReportEntry = {
+		line: 2,
+		time: "09:00",
+		kind: "reference",
+		slug: "coffee",
+		version: 1,
+		item: "food",
+		name: "Coffee",
+		amount: 1,
+		unit: "cup",
+		nutrients: nutrients({ kcal: 2.4 }),
+	};
+	const oats: ReportEntry = {
+		line: 3,
+		time: undefined,
+		kind: "reference",
+		slug: "oats",
+		version: 2,
+		item: "food",
+		name: "Oats",
+		amount: 60,
+		unit: "g",
+		nutrients: nutrients({ kcal: 222, protein: 7.8, carbs: 36 }),
+	};
+	const untimed = (entry: ReportEntry): ReportEntry => ({
+		...entry,
+		time: undefined,
+	});
+
+	type EntryJson = Record<string, unknown>;
+	type DocumentJson = {
+		days: { meals: { meal: string; entries?: EntryJson[] }[] }[];
+	};
+	const entriesOf = (document: unknown) =>
+		(document as DocumentJson).days.flatMap((d) =>
+			d.meals.flatMap((m) => m.entries ?? []),
+		);
+	const withoutTimes = (document: unknown): unknown =>
+		JSON.parse(JSON.stringify(document), (key, value) =>
+			key === "time" ? undefined : value,
+		);
+
+	test("timed and untimed entries in file order, the time right after kind", () => {
+		const document = reportJson(
+			report([day("2026-09-29", [meal("breakfast", [coffee, oats])])]),
+		);
+
+		expect(entriesOf(document)).toEqual([
+			{
+				line: 2,
+				kind: "reference",
+				time: "09:00",
+				slug: "coffee",
+				version: 1,
+				item: "food",
+				name: "Coffee",
+				amount: 1,
+				unit: "cup",
+				nutrients: { ...zero, kcal: 2.4 },
+			},
+			{
+				line: 3,
+				kind: "reference",
+				time: null,
+				slug: "oats",
+				version: 2,
+				item: "food",
+				name: "Oats",
+				amount: 60,
+				unit: "g",
+				nutrients: { ...zero, kcal: 222, protein: 7.8, carbs: 36 },
+			},
+		]);
+		const text = JSON.stringify(document);
+		expect(text).toContain('{"line":2,"kind":"reference","time":"09:00",');
+		expect(text).toContain('{"line":3,"kind":"reference","time":null,');
+	});
+
+	test("an inline entry has the time right after kind", () => {
+		const document = reportJson(
+			report([
+				day("2026-09-29", [meal("dinner", [{ ...ramenEntry, time: "19:30" }])]),
+			]),
+		);
+
+		expect(JSON.stringify(entriesOf(document))).toBe(
+			'[{"line":5,"kind":"inline","time":"19:30","description":"restaurant ramen",' +
+				'"nutrients":{"kcal":800,"protein":35,"fat":0,"carbs":0,"fiber":0}}]',
+		);
+	});
+
+	test("every entry has the field in a range with entries", () => {
+		const document = reportJson(
+			report([
+				day("2026-09-23", [
+					meal("breakfast", [coffee, oats]),
+					meal("lunch", [{ ...ramenEntry, time: "12:30" }]),
+				]),
+				day("2026-09-24"),
+				day("2026-09-25", [meal("dinner", [appleEntry, ramenEntry])]),
+			]),
+		);
+
+		const entries = entriesOf(document);
+		expect(entries.map((entry) => entry.time)).toEqual([
+			"09:00",
+			null,
+			"12:30",
+			null,
+			null,
+		]);
+		for (const entry of entries)
+			expect(Object.hasOwn(entry, "time")).toBe(true);
+	});
+
+	test("a range without entries has no entries", () => {
+		const document = reportJson(
+			report([
+				day("2026-09-23", [
+					meal("breakfast", [coffee, oats], { withEntries: false }),
+				]),
+				day("2026-09-24"),
+			]),
+		) as DocumentJson;
+
+		for (const d of document.days) {
+			for (const m of d.meals) expect(m).not.toHaveProperty("entries");
+		}
+		expect(JSON.stringify(document)).not.toContain('"time"');
+	});
+
+	test("times change no nutrient value set", () => {
+		const timed = report([
+			day("2026-09-23", [
+				meal("breakfast", [coffee, oats]),
+				meal("dinner", [{ ...ramenEntry, time: "19:30" }]),
+			]),
+			day("2026-09-24", [meal("lunch", [{ ...appleEntry, time: "12:30" }])]),
+		]);
+		const plain = report([
+			day("2026-09-23", [
+				meal("breakfast", [untimed(coffee), oats]),
+				meal("dinner", [ramenEntry]),
+			]),
+			day("2026-09-24", [meal("lunch", [appleEntry])]),
+		]);
+
+		expect(withoutTimes(reportJson(timed))).toEqual(
+			withoutTimes(reportJson(plain)),
+		);
 	});
 });

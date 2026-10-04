@@ -148,3 +148,47 @@ test("check reports every problem in the data directory once", () =>
 			`${path("logs", "2026", "2026-09-28.nom")}:2: 'apple@1' is unusable: the required nutrient 'kcal' is missing`,
 		);
 	}));
+
+test("check accepts timed entries and names the line of a malformed time", () =>
+	withSandbox(async ({ dir, nomnom }) => {
+		expectOk(
+			await nomnom(
+				"food",
+				"add",
+				"--name",
+				"Test Oats",
+				"--base-unit",
+				"g",
+				"--kcal",
+				"370",
+			),
+		);
+		const day = join(dir, "logs", "2026", "2026-09-29.nom");
+		await mkdir(join(dir, "logs", "2026"), { recursive: true });
+		const timed = [
+			"[breakfast]",
+			"07:30 test-oats@1 60 g",
+			"test-oats@1 20",
+			"",
+			"[dinner]",
+			'19:30\t"made-up ramen"  kcal=800  # late',
+			"",
+		].join("\n");
+		await writeFile(day, timed);
+
+		expect(expectOk(await nomnom("check")).out).toBe(
+			"No errors in 1 food, 0 recipes and 1 day file\n",
+		);
+
+		await writeFile(day, timed.replace("07:30 ", "8:15 "));
+
+		expect(await nomnom("check")).toEqual({
+			code: 1,
+			out: "",
+			err: [
+				"error: 1 error in 1 file",
+				`${day}:2: '8:15' is not a valid time: write it as HH:MM, from 00:00 to 23:59`,
+				"",
+			].join("\n"),
+		});
+	}));

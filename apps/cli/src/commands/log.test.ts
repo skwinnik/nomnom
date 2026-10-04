@@ -128,6 +128,44 @@ describe("log", () => {
 		]);
 	});
 
+	test("passes --time to the service as given, without checking it", async () => {
+		const timed = await run(["breakfast", "apple", "1", "--time", "08:15"]);
+		const invalid = await run([
+			"breakfast",
+			"--entry",
+			"oats 60 g",
+			"--time",
+			"8:15",
+		]);
+
+		expect(timed.calls).toEqual([
+			{
+				meal: "breakfast",
+				time: "08:15",
+				ref: "apple",
+				amount: "1",
+				nutrients: {},
+				entries: [],
+			},
+		]);
+		expect(invalid.calls).toEqual([
+			{
+				meal: "breakfast",
+				time: "8:15",
+				nutrients: {},
+				entries: ["oats 60 g"],
+			},
+		]);
+	});
+
+	test("leaves the time out without --time", async () => {
+		const result = await run(["breakfast", "--entry", "07:30 oats 60 g"]);
+
+		expect(result.calls).toHaveLength(1);
+		expect(result.calls[0]).not.toHaveProperty("time");
+		expect(result.calls[0]?.entries).toEqual(["07:30 oats 60 g"]);
+	});
+
 	test("an unknown nutrient option is a usage error", async () => {
 		const result = await run([
 			"dinner",
@@ -216,15 +254,18 @@ describe("log", () => {
 		});
 	});
 
-	test("help lists the positionals, --entry, --inline, --date and every nutrient", async () => {
+	test("help lists the positionals, --entry, --inline, --date, --time and every nutrient", async () => {
 		const result = await run(["--help"]);
 
 		expect(result.out).toContain(
 			"Usage: nomnom log <meal> [food] [amount] [unit...] [options]",
 		);
 		expect(result.out).toContain("--inline <description>");
-		expect(result.out).toMatch(/--entry <line> .* \(repeatable\)\n/);
+		expect(result.out).toMatch(/--entry <line> .*HH:MM.* \(repeatable\)\n/);
 		expect(result.out).toContain("--date <yyyy-mm-dd>");
+		expect(result.out).toMatch(
+			/--time <HH:MM> +The time of the entries, such as 08:15; with --entry, for values without their own time \(default: none\)\n/,
+		);
 		expect(result.out).toContain("--kcal <number>");
 		expect(result.out).toContain("--fiber <number>");
 		expect(result.out).not.toContain("(required)");

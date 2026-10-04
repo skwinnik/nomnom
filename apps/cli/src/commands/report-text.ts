@@ -66,10 +66,13 @@ export function formatRange(report: Report): string {
 	return dayTables.join("") + renderTable("", report.nutrients, rows);
 }
 
+/** The time first when the entry has one; an untimed label has no placeholder. */
 function entryLabel(entry: ReportEntry): string {
-	return entry.kind === "reference"
-		? `${entry.name}  ${entry.amount} ${entry.unit}`
-		: `"${entry.description}"`;
+	const label =
+		entry.kind === "reference"
+			? `${entry.name}  ${entry.amount} ${entry.unit}`
+			: `"${entry.description}"`;
+	return entry.time === undefined ? label : `${entry.time} ${label}`;
 }
 
 /** Right-aligned nutrient columns after a label column that fits the longest label. */

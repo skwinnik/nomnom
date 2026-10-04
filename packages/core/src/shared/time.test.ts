@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
 	datesBetween,
 	isIsoDate,
+	isTimeOfDay,
 	isTimestampWithOffset,
 	localDate,
 	localTimestamp,
@@ -35,6 +36,27 @@ describe("isIsoDate", () => {
 			expect(isIsoDate(text)).toBe(false);
 		},
 	);
+});
+
+describe("isTimeOfDay", () => {
+	test.each(["00:00", "09:05", "23:59"])("accepts %j", (text) => {
+		expect(isTimeOfDay(text)).toBe(true);
+	});
+
+	test.each([
+		"24:00",
+		"12:60",
+		"8:15",
+		"08:5",
+		"0815",
+		"08:15:30",
+		"8:15pm",
+		" 08:15",
+		"８:15",
+		"",
+	])("rejects %j", (text) => {
+		expect(isTimeOfDay(text)).toBe(false);
+	});
 });
 
 describe("isTimestampWithOffset", () => {

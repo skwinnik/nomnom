@@ -1,17 +1,39 @@
-# daily-log Specification
+# Spec Delta
 
-## Purpose
+## ADDED Requirements
 
-Defines the plain-text daily log: one `.nom` file per date recording what was eaten, grouped by meal, as pinned references to foods or recipes or as inline nutrient values. Day files store entries only; totals are calculated from the entries when needed. Also defines `nomnom log`, which adds entries without disturbing hand-written content.
+### Requirement: Entry times
+An entry MAY have a time, given only by the time prefix of its line (see "Line types"). The time SHALL be a local wall-clock time on the date of the day file that contains the entry. No time zone or UTC offset SHALL be stored with it, and a time SHALL NOT be converted, adjusted or moved to another date, for example when the user's time zone changes. A time that is skipped or that occurs twice on that date because of a daylight saving time change SHALL be accepted and kept exactly as written.
 
-## Requirements
+An entry without a time prefix SHALL have no time. The system SHALL NOT give it one, whether from its meal, its position, its neighbouring entries, the current time or anything else.
 
-### Requirement: Day file location
-Each local calendar date SHALL have at most one log file at `logs/<yyyy>/<yyyy-mm-dd>.nom`. A missing file SHALL mean nothing was logged that day.
+Times SHALL NOT affect the order of entries: entries SHALL keep their file order within a meal, as without times. Times within a meal need not increase, several entries MAY have the same time, timed and untimed entries MAY be mixed in one section, and a time need not match its meal.
 
-#### Scenario: Path for a date
-- **WHEN** an entry is logged for 2026-09-29
-- **THEN** it is written to `logs/2026/2026-09-29.nom`
+#### Scenario: Times keep the file order
+- **WHEN** a file has `[breakfast]` with the lines `09:00 coffee@1 1 cup`, `07:30 oats@2 60 g` and `milk@1 200 ml`, in that order
+- **THEN** breakfast has three entries in that order: `coffee@1` at 09:00, `oats@2` at 07:30 and `milk@1` without a time
+
+#### Scenario: Time that doesn't match the meal
+- **WHEN** a file has `[breakfast]` with the line `23:30 "late cereal" kcal=300`
+- **THEN** the file is valid and the entry stays in breakfast with the time 23:30
+
+#### Scenario: Start and end of the day
+- **WHEN** the file `logs/2026/2026-09-29.nom` has the lines `00:00 "midnight snack" kcal=150` and `23:59 "tea" kcal=2` under `[snack]`
+- **THEN** both entries are on 2026-09-29, at 00:00 and 23:59
+
+#### Scenario: Time skipped by a daylight saving change
+- **WHEN** local clocks jump from 02:00 to 03:00 on the date of a day file, and the file has the line `02:30 "bottle of milk" kcal=120`
+- **THEN** the file is valid and the entry has the time 02:30, unchanged
+
+#### Scenario: Time repeated by a daylight saving change
+- **WHEN** local clocks go back from 03:00 to 02:00 on the date of a day file, and the file has the lines `02:15 "tea" kcal=2` and `02:45 "biscuit" kcal=60`
+- **THEN** the file is valid and the entries have the times 02:15 and 02:45 as written, in file order
+
+#### Scenario: Untimed entry gets no time
+- **WHEN** a file has the line `apple@2 1 medium sized apple` under `[breakfast]`
+- **THEN** the entry has no time, whatever the date of the file and the current time
+
+## MODIFIED Requirements
 
 ### Requirement: Line types
 A day file SHALL be a sequence of lines. Leading and trailing whitespace on a line SHALL be ignored.
@@ -71,21 +93,6 @@ A day file SHALL NOT store calculated values such as day totals. They SHALL be c
 - **WHEN** a file has `7up@1 1 can` under `[snack]`
 - **THEN** it is an untimed reference entry for version 1 of `7up`, as without times
 
-### Requirement: Sections
-A section header `[<meal>]` SHALL start a section that runs until the next header or the end of the file. Every entry SHALL be inside a section. When a meal's section appears more than once, its entries SHALL be merged. A section whose meal is not in the configuration SHALL be accepted with a warning and treated as ordered after all configured meals.
-
-#### Scenario: Entry before any section
-- **WHEN** the first entry in a file comes before any section header
-- **THEN** parsing fails with an error naming the file and line number
-
-#### Scenario: Duplicate sections
-- **WHEN** a file has two `[lunch]` sections with one entry each
-- **THEN** the day's `lunch` has both entries
-
-#### Scenario: Unknown meal
-- **WHEN** a file has a `[brunch]` section and `brunch` is not in the configured meals
-- **THEN** the file parses, `brunch` is kept, and a warning names `brunch`
-
 ### Requirement: Reference entries
 A reference entry SHALL have the form `[<time> ]<slug>@<version> <amount> [<unit>]`, with tokens separated by whitespace, where `<time> ` is the optional time prefix defined in "Line types". The time prefix SHALL NOT be part of the slug, amount or unit and SHALL NOT change how they are read. The version is required. The amount SHALL be a positive number. The unit is the rest of the line after the amount (excluding a trailing comment), normalised like unit names; when absent, the item's default unit is used (as for recipe ingredients). The slug SHALL resolve to a food or recipe in the shared namespace, the version SHALL exist, and the unit SHALL be allowed by that version. When the version is a food version, it SHALL be usable (see the foods capability).
 
@@ -143,13 +150,6 @@ An inline entry SHALL have the form `[<time> ]"<description>" <nutrient>=<number
 #### Scenario: Amount and unit instead of nutrients
 - **WHEN** a line reads `"ramen" 300 g`
 - **THEN** validation fails with an error naming the line number
-
-### Requirement: Invalid day files
-When a day file has any syntax or validation error, the system SHALL report every error it finds, each with the file path and line number, and SHALL treat the day as invalid rather than skip the bad lines.
-
-#### Scenario: Several errors
-- **WHEN** a file has errors on lines 3 and 7
-- **THEN** both errors are reported with their line numbers
 
 ### Requirement: log command
 `nomnom log` SHALL add one or more entries to a day file. It SHALL accept:
@@ -321,29 +321,6 @@ The times of new and existing entries SHALL NOT change where lines are inserted,
 - **WHEN** no file exists for the date and a snack entry is logged
 - **THEN** the file is created with `[snack]` and the entry
 
-### Requirement: Day file names
-Every file under `logs/`, at any depth, whose name ends with `.nom` SHALL be a day file at `logs/<yyyy>/<yyyy-mm-dd>.nom`, where `<yyyy-mm-dd>` is a real calendar date and `<yyyy>` is its year. Any other `.nom` file under `logs/` SHALL be invalid, with an error naming the file and the expected layout. Other files and directories under `logs/` SHALL be ignored. Commands that read a day find its file from the date and don't list `logs/`; `nomnom check` lists it and reports invalid files.
-
-#### Scenario: Date without leading zeros
-- **WHEN** `logs/2026/2026-9-30.nom` exists and `nomnom check` runs
-- **THEN** the file is reported as invalid
-
-#### Scenario: Wrong year directory
-- **WHEN** `logs/2025/2026-01-01.nom` exists and `nomnom check` runs
-- **THEN** the file is reported as invalid
-
-#### Scenario: Day file outside a year directory
-- **WHEN** `logs/2026-09-30.nom` or `logs/old/2026-09-30.nom` exists and `nomnom check` runs
-- **THEN** the file is reported as invalid
-
-#### Scenario: Not a real date
-- **WHEN** `logs/2026/2026-02-30.nom` exists and `nomnom check` runs
-- **THEN** the file is reported as invalid
-
-#### Scenario: Other files are ignored
-- **WHEN** `logs/` contains `notes.txt`, `logs/2026/2026-09-30.nom~` and a directory `archive`
-- **THEN** `nomnom check` reports none of them
-
 ### Requirement: Dry run of log
 `nomnom log` SHALL accept `--dry-run`, with the behaviour and output defined by the `cli` spec. It SHALL print the lines it would add, as a real run does, including their times, and preview the day file: a new file with its section header and entries, or the lines it would insert into the existing file with up to two unchanged lines before and after them. Previewed lines SHALL be exactly the lines a real run writes. Warnings about the existing day file SHALL be printed as in a real run, and a day file with errors, an invalid entry or an invalid or conflicting time SHALL fail the dry run as it fails a real run.
 
@@ -378,34 +355,3 @@ Every file under `logs/`, at any depth, whose name ends with `.nom` SHALL be a d
 #### Scenario: Dry run with a conflicting time
 - **WHEN** `nomnom log breakfast --time 08:00 --entry 'oats 60 g' --entry '08:00 milk 200 ml' --dry-run` runs
 - **THEN** the command fails and reports entry 2 `08:00 milk 200 ml` as conflicting with `--time`, as without `--dry-run`, and no preview is printed
-
-### Requirement: Entry times
-An entry MAY have a time, given only by the time prefix of its line (see "Line types"). The time SHALL be a local wall-clock time on the date of the day file that contains the entry. No time zone or UTC offset SHALL be stored with it, and a time SHALL NOT be converted, adjusted or moved to another date, for example when the user's time zone changes. A time that is skipped or that occurs twice on that date because of a daylight saving time change SHALL be accepted and kept exactly as written.
-
-An entry without a time prefix SHALL have no time. The system SHALL NOT give it one, whether from its meal, its position, its neighbouring entries, the current time or anything else.
-
-Times SHALL NOT affect the order of entries: entries SHALL keep their file order within a meal, as without times. Times within a meal need not increase, several entries MAY have the same time, timed and untimed entries MAY be mixed in one section, and a time need not match its meal.
-
-#### Scenario: Times keep the file order
-- **WHEN** a file has `[breakfast]` with the lines `09:00 coffee@1 1 cup`, `07:30 oats@2 60 g` and `milk@1 200 ml`, in that order
-- **THEN** breakfast has three entries in that order: `coffee@1` at 09:00, `oats@2` at 07:30 and `milk@1` without a time
-
-#### Scenario: Time that doesn't match the meal
-- **WHEN** a file has `[breakfast]` with the line `23:30 "late cereal" kcal=300`
-- **THEN** the file is valid and the entry stays in breakfast with the time 23:30
-
-#### Scenario: Start and end of the day
-- **WHEN** the file `logs/2026/2026-09-29.nom` has the lines `00:00 "midnight snack" kcal=150` and `23:59 "tea" kcal=2` under `[snack]`
-- **THEN** both entries are on 2026-09-29, at 00:00 and 23:59
-
-#### Scenario: Time skipped by a daylight saving change
-- **WHEN** local clocks jump from 02:00 to 03:00 on the date of a day file, and the file has the line `02:30 "bottle of milk" kcal=120`
-- **THEN** the file is valid and the entry has the time 02:30, unchanged
-
-#### Scenario: Time repeated by a daylight saving change
-- **WHEN** local clocks go back from 03:00 to 02:00 on the date of a day file, and the file has the lines `02:15 "tea" kcal=2` and `02:45 "biscuit" kcal=60`
-- **THEN** the file is valid and the entries have the times 02:15 and 02:45 as written, in file order
-
-#### Scenario: Untimed entry gets no time
-- **WHEN** a file has the line `apple@2 1 medium sized apple` under `[breakfast]`
-- **THEN** the entry has no time, whatever the date of the file and the current time

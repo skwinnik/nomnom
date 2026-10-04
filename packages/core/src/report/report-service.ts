@@ -25,6 +25,8 @@ export interface ReportInput {
 export type ReportEntry = {
 	/** The entry's line number in the day file. */
 	line: number;
+	/** The entry's time as written, `HH:MM`, or `undefined` when it has none. */
+	time: string | undefined;
 	nutrients: Nutrients;
 } & (
 	| {
@@ -125,6 +127,7 @@ export function createReportService(deps: {
 			}
 			return {
 				line,
+				time: content.time,
 				kind: "inline",
 				description: content.description,
 				nutrients,
@@ -134,6 +137,7 @@ export function createReportService(deps: {
 		const unit = content.unit ?? measureOf(item).defaultUnit;
 		return {
 			line,
+			time: content.time,
 			kind: "reference",
 			slug: item.slug,
 			version: item.record.version,

@@ -9,7 +9,7 @@ import type { FileSystem } from "../fs/file-system";
 import { parseNumber } from "../shared/numbers";
 import { parseNutrientInput } from "../shared/nutrient-input";
 import { type ItemRef, parseItemRef } from "../shared/references";
-import { isIsoDate, localDate } from "../shared/time";
+import { isIsoDate, isTimeOfDay, localDate } from "../shared/time";
 import { normaliseUnitName } from "../shared/units";
 import { insertEntries } from "./insert";
 import { isEntry, parseEntryText, parseLine } from "./parse";
@@ -24,6 +24,11 @@ export interface LogInput {
 	meal: string;
 	/** `yyyy-mm-dd`; default: today's local date. */
 	date?: string;
+	/**
+	 * `HH:MM`, the time of the entry, or of every `entries` value without its
+	 * own time; default: none. Never taken from the clock.
+	 */
+	time?: string;
 	/** A reference entry: `<slug>[@<version>]` with an amount and optional unit. */
 	ref?: string;
 	amount?: string;
@@ -131,10 +136,12 @@ export function createDayLogService(deps: {
 		input: LogInput,
 		config: Config,
 	): Promise<string> => {
-		const line =
+		const line = withTime(
+			input.time,
 			input.inline === undefined
 				? await referenceLine(input, config)
-				: inlineLine(input, config);
+				: inlineLine(input, config),
+		);
 		// The new line must pass the same checks as a hand-written one.
 		const content = parseLine(line);
 		if (!isEntry(content)) {
@@ -151,21 +158,32 @@ export function createDayLogService(deps: {
 
 	/**
 	 * Builds an --entry value into its line in the standard form and checks the
-	 * line by the rules of a hand-written one. Problems in the entry itself have
-	 * an empty `file`.
+	 * line by the rules of a hand-written one. The line's time is the value's
+	 * own, or `time` (--time) when it has none. A value with its own time
+	 * conflicts with `time`, even an equal one; the conflict comes first and the
+	 * value's other checks still run. Problems in the entry itself have an
+	 * empty `file`.
 	 */
 	const entryLine = async (
 		text: string,
 		config: Config,
+		time: string | undefined,
 	): Promise<{ line: string } | { problems: Problem[] }> => {
+		const problems: Problem[] = [];
 		let line: string;
 		try {
 			const entry = parseEntryText(text);
+			if (time !== undefined && entry.time !== undefined) {
+				problems.push({
+					file: "",
+					message: `it has its own time ${entry.time}, which conflicts with --time ${time}`,
+				});
+			}
 			if (entry.kind === "reference") {
 				line = await pinReference(entry, config);
 			} else {
 				// Before writing the line, which keeps only known nutrients.
-				const problems = await checkEntry(entry, { config, catalog });
+				problems.push(...(await checkEntry(entry, { config, catalog })));
 				if (problems.length > 0) return { problems };
 				const values = new Map(entry.values.map((v) => [v.id, v.value]));
 				line = formatInline(
@@ -176,19 +194,20 @@ export function createDayLogService(deps: {
 					}),
 				);
 			}
+			line = withTime(entry.time ?? time, line);
 		} catch (error) {
 			if (!(error instanceof NomnomError)) throw error;
-			return {
-				problems: [{ file: "", message: error.message }, ...error.problems],
-			};
+			problems.push({ file: "", message: error.message }, ...error.problems);
+			return { problems };
 		}
 		const content = parseLine(line);
 		if (!isEntry(content)) {
 			const message =
 				content.kind === "error" ? content.message : "not an entry";
-			return { problems: [{ file: "", message }] };
+			problems.push({ file: "", message });
+			return { problems };
 		}
-		const problems = await checkEntry(content, { config, catalog });
+		problems.push(...(await checkEntry(content, { config, catalog })));
 		return problems.length > 0 ? { problems } : { line };
 	};
 
@@ -196,12 +215,13 @@ export function createDayLogService(deps: {
 	const entryLines = async (
 		entries: readonly string[],
 		config: Config,
+		time: string | undefined,
 	): Promise<string[]> => {
 		const lines: string[] = [];
 		const problems: Problem[] = [];
 		let invalid = 0;
 		for (const [i, raw] of entries.entries()) {
-			const built = await entryLine(raw, config);
+			const built = await entryLine(raw, config, time);
 			if ("line" in built) {
 				lines.push(built.line);
 				continue;
@@ -241,6 +261,18 @@ export function createDayLogService(deps: {
 					`The date must be a real date as yyyy-mm-dd, got '${date}'`,
 				);
 			}
+			// A problem with the call, so it isn't repeated under every --entry value.
+			if (input.time !== undefined && !isTimeOfDay(input.time)) {
+				throw new NomnomError(
+					`The time must be HH:MM, from 00:00 to 23:59, got '${input.time}'`,
+				);
+			}
+			// Before the form checks, so every combination gets the same message.
+			if (input.ref !== undefined && TIME_LIKE.test(input.ref)) {
+				throw new NomnomError(
+					"Give the time with --time, as in 'nomnom log breakfast apple 1 --time 08:15'",
+				);
+			}
 
 			const entries = input.entries ?? [];
 			if (entries.length > 0 && hasSingleEntry(input)) {
@@ -250,7 +282,7 @@ export function createDayLogService(deps: {
 			}
 			const added =
 				entries.length > 0
-					? await entryLines(entries, config)
+					? await entryLines(entries, config, input.time)
 					: [await singleLine(input, config)];
 
 			const { path, lines, check } = await readDay(
@@ -283,6 +315,14 @@ function hasSingleEntry(input: LogInput): boolean {
 		input.inline !== undefined ||
 		Object.values(input.nutrients ?? {}).some((v) => v !== undefined)
 	);
+}
+
+/** A first word of digits and a colon, the day-file parser's test for a time. */
+const TIME_LIKE = /^\d+:/;
+
+/** The only place a time is written: the time, one space and the line. */
+function withTime(time: string | undefined, line: string): string {
+	return time === undefined ? line : `${time} ${line}`;
 }
 
 /** An inline entry line in the standard form. */
